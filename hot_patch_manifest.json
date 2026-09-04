@@ -1,0 +1,21 @@
+{
+  "patch_version": "1.0.1.1",
+  "timestamp": "2026-09-05T02:21:42.264023",
+  "notes": "Fix Edit Plan file picker in Recap Studio to allow .json files",
+  "files": [
+    {
+      "path": "tabs/recap_studio_tab.py",
+      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/tabs/recap_studio_tab.py"
+    },
+    {
+      "path": "recap_studio_v2_8.py",
+      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/recap_studio_v2_8.py"
+    }
+  ],
+  "broadcast": {
+    "id": "patch_1.0.1.1_1788555102",
+    "title": "\u26a1 Hot-Patch v1.0.1.1 Applied",
+    "message": "Fix Edit Plan file picker in Recap Studio to allow .json files",
+    "type": "info"
+  }
+}
