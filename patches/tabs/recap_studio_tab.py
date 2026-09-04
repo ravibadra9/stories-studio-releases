@@ -1086,7 +1086,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         try:
             from PIL import Image, ImageTk
             video_path = self.video_entry.get().strip()
-            temp_preview = os.path.abspath(".preview_cache/canvas_editor_base.jpg")
+            temp_preview = os.path.join(self.preview_cache_dir, "canvas_editor_base.jpg")
             os.makedirs(os.path.dirname(temp_preview), exist_ok=True)
 
             if video_path and os.path.exists(video_path):
@@ -1198,7 +1198,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
             from recap_engine_v2_8 import render_logo_caption_preview_frame
             video_p = self.video_entry.get().strip()
             logo_p = self.logo_entry.get().strip()
-            out_preview = os.path.abspath(".preview_cache/logo_caption_preview.png")
+            out_preview = os.path.join(self.preview_cache_dir, "logo_caption_preview.png")
 
             fsize = int(self.caption_size_slider.get())
             l_width = int(self.logo_width_slider.get())
