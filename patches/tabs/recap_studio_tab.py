@@ -1059,7 +1059,12 @@ class RecapStudioTabFrame(ctk.CTkFrame):
             if not os.path.exists(required[key]): raise ValueError(f"File not found: {required[key]}")
         mode = self.voiceover_mode.get()
         if mode == "Generate Voiceover":
-            if not self.api_key.get().strip(): raise ValueError("Generate Voiceover: API key missing")
+            user_k = self.api_key.get().strip()
+            if not user_k:
+                from voice_cache import DEFAULT_AI33_KEY
+                user_k = DEFAULT_AI33_KEY
+                self.api_key.delete(0, "end")
+                self.api_key.insert(0, user_k)
             if not self.voice_id.get().strip(): raise ValueError("Generate Voiceover: Voice ID missing")
         else:
             if not self.uploaded_voiceover_files: raise ValueError("Upload Voiceover: choose narration audio file(s)")
@@ -1070,7 +1075,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         for path in self._current_bgm_files():
             if path and not os.path.exists(path): raise ValueError(f"BGM file not found: {path}")
         validate_plan_against_script(required["Edit plan"], required["Rewritten script"])
-        required["API key"] = self.api_key.get().strip()
+        required["API key"] = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
         required["Voice ID"] = self._selected_voice_id()
         return required
 
