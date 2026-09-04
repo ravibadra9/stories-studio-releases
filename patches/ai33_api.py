@@ -88,12 +88,12 @@ def ai33_tts_generate(
     log_fn = None
 ) -> bool:
     """
-    Universal Zero-Failure TTS Generator:
-    Tier 1: AI33Pro v3 endpoint (45s poll timeout)
+    Universal Zero-Failure TTS Generator (Matching Story Image Engine):
+    Tier 0: Global Persistent Disk Cache (Instant 0s, 0 credits)
+    Tier 1: AI33Pro v3 endpoint (with exponential retry)
     Tier 2: Direct ElevenLabs API (if custom user API key configured)
-    Tier 3: Microsoft Edge Neural TTS (100% free, crystal clear spoken voice)
-    Tier 4: Google gTTS
-    Tier 5: Windows SAPI Offline Synthesizer
+    Tier 3: Language-Aware Microsoft Edge Neural TTS (100% free, studio clarity, zero failure)
+    Tier 4: Google gTTS (language-specific)
     """
     if not text or not text.strip():
         return False
@@ -135,9 +135,42 @@ def ai33_tts_generate(
         prefixed_vid = f"{provider_prefix}{bare_vid}"
         clean_vid = bare_vid
 
-    key_candidates = [k for k in [api_key, os.getenv("AI33_API_KEY"), os.getenv("XI_API_KEY"), DEFAULT_AI33_KEY] if k]
+    # --- Tier 0: Check Global Persistent Audio Cache ---
+    cached_file = None
+    try:
+        import hashlib, shutil
+        cache_appdata = os.getenv("LOCALAPPDATA") or os.getenv("APPDATA") or os.path.expanduser("~")
+        global_cache_dir = os.path.join(cache_appdata, "StoriesStudio", "tts_cache")
+        os.makedirs(global_cache_dir, exist_ok=True)
+        raw_key = f"{text.strip()}|{clean_vid}|{str(model_id).strip()}|{float(speed):.2f}"
+        cache_key = hashlib.md5(raw_key.encode("utf-8")).hexdigest()
+        cached_file = os.path.join(global_cache_dir, f"{cache_key}.mp3")
+        if os.path.exists(cached_file) and os.path.getsize(cached_file) > 500:
+            if out_path:
+                shutil.copy2(cached_file, out_path)
+            if log_fn:
+                try:
+                    log_fn(f"   [CACHE] [OK] Reused cached audio from disk ({os.path.getsize(cached_file)} bytes)")
+                except Exception:
+                    pass
+            return True
+    except Exception:
+        pass
 
-    # Tier 1: AI33 v3 Endpoint (try key, then default fallback key)
+    def _save_to_cache(src_path: str):
+        if cached_file and src_path and os.path.exists(src_path) and os.path.getsize(src_path) > 500:
+            try:
+                import shutil
+                shutil.copy2(src_path, cached_file)
+            except Exception:
+                pass
+
+    key_candidates = []
+    for k in [api_key, os.getenv("AI33_API_KEY"), os.getenv("XI_API_KEY"), DEFAULT_AI33_KEY]:
+        if k and k not in key_candidates:
+            key_candidates.append(k)
+
+    # --- Tier 1: AI33 v3 Endpoint ---
     for cur_key in key_candidates:
         try:
             client = AI33Client(api_key=cur_key)
@@ -151,6 +184,7 @@ def ai33_tts_generate(
                             with open(out_path, "wb") as f:
                                 f.write(res)
                             trim_audio_silence(out_path)
+                            _save_to_cache(out_path)
                         if log_fn:
                             log_fn(f"[ai33-v3] Generated {len(res)} bytes")
                         return True
@@ -165,14 +199,16 @@ def ai33_tts_generate(
                             if audio_url and out_path:
                                 client.download_file(audio_url, out_path)
                                 trim_audio_silence(out_path)
+                                _save_to_cache(out_path)
                                 return True
                         elif (res.get("audio_url") or res.get("url")) and out_path:
                             client.download_file(res.get("audio_url") or res.get("url"), out_path)
                             trim_audio_silence(out_path)
+                            _save_to_cache(out_path)
                             return True
                 except AI33APIError as exc:
                     if (exc.status_code in (429, 503) or "queue" in str(exc).lower()) and attempt < 3:
-                        time.sleep(1.5 * attempt)
+                        time.sleep(2.0 * attempt)
                         continue
                     if attempt >= 3:
                         break
@@ -180,13 +216,13 @@ def ai33_tts_generate(
                     err_text = str(exc).lower()
                     is_retryable = any(kw in err_text for kw in ("timeout", "timed out", "queue", "rate", "429", "500", "502", "503", "504"))
                     if is_retryable and attempt < 3:
-                        time.sleep(1.5 * attempt)
+                        time.sleep(2.0 * attempt)
                         continue
                     break
         except Exception:
             pass
 
-    # Tier 2: Direct ElevenLabs API (if custom user API key is configured)
+    # --- Tier 2: Direct ElevenLabs API (if custom user API key is configured) ---
     if api_key and api_key != DEFAULT_AI33_KEY:
         try:
             bare_vid = clean_vid
@@ -216,38 +252,67 @@ def ai33_tts_generate(
                         with open(out_path, "wb") as f:
                             f.write(audio_bytes)
                         trim_audio_silence(out_path)
+                        _save_to_cache(out_path)
                     if log_fn:
                         log_fn(f"[elevenlabs-direct] Generated {len(audio_bytes)} bytes")
                     return True
         except Exception:
             pass
 
-    # Tier 3: High-Quality Microsoft Edge Neural TTS Fallback (Zero Queue, 100% Reliable)
+    # --- Tier 3: High-Quality Microsoft Edge Neural TTS Fallback (Language-Aware, Zero Failure) ---
     try:
         import asyncio
         import edge_tts
-        vh = f"{clean_vid} {prefixed_vid}".lower()
-        if any(w in vh for w in ("female", "woman", "girl", "aria", "sarah", "rachel", "bella", "swara")):
-            edge_v = "en-US-JennyNeural"
-        elif any(w in vh for w in ("hindi", "indian", "madhur")):
-            edge_v = "hi-IN-MadhurNeural"
+        
+        # Detect text script to select native studio neural voice
+        is_hindi = any('\u0900' <= c <= '\u097F' for c in text)
+        is_arabic_urdu = any('\u0600' <= c <= '\u06FF' for c in text)
+        is_bengali = any('\u0980' <= c <= '\u09FF' for c in text)
+        is_tamil = any('\u0B80' <= c <= '\u0BFF' for c in text)
+        is_telugu = any('\u0C00' <= c <= '\u0C7F' for c in text)
+        is_cyrillic = any('\u0400' <= c <= '\u04FF' for c in text)
+        is_cjk = any('\u4E00' <= c <= '\u9FFF' or '\u3040' <= c <= '\u30FF' or '\uAC00' <= c <= '\uD7AF' for c in text)
+
+        vh = f"{clean_vid} {prefixed_vid} {voice_id}".lower()
+        is_female = any(w in vh for w in ("female", "woman", "girl", "aria", "sarah", "rachel", "bella", "swara", "emma", "lily", "alice", "charlotte", "jessica", "freya", "salli", "kimberly", "kendra", "joanna"))
+
+        if is_hindi:
+            edge_v = "hi-IN-SwaraNeural" if is_female else "hi-IN-MadhurNeural"
+        elif is_arabic_urdu:
+            edge_v = "ur-IN-GulNeural" if is_female else "ur-IN-SalmanNeural"
+        elif is_bengali:
+            edge_v = "bn-IN-TanishaaNeural" if is_female else "bn-IN-BashkarNeural"
+        elif is_tamil:
+            edge_v = "ta-IN-PallaviNeural" if is_female else "ta-IN-ValluvarNeural"
+        elif is_telugu:
+            edge_v = "te-IN-ShrutiNeural" if is_female else "te-IN-MohanNeural"
+        elif is_cyrillic:
+            edge_v = "ru-RU-SvetlanaNeural" if is_female else "ru-RU-DmitryNeural"
+        elif is_cjk:
+            edge_v = "zh-CN-XiaoxiaoNeural" if is_female else "zh-CN-YunxiNeural"
         elif any(w in vh for w in ("british", "uk", "ryan", "george")):
-            edge_v = "en-GB-RyanNeural"
-        elif any(w in vh for w in ("deep", "narrator", "adam", "antoni", "josh")):
+            edge_v = "en-GB-SoniaNeural" if is_female else "en-GB-RyanNeural"
+        elif any(w in vh for w in ("deep", "narrator", "adam", "antoni", "josh", "christopher")):
             edge_v = "en-US-ChristopherNeural"
         else:
-            edge_v = "en-US-GuyNeural"
+            edge_v = "en-US-JennyNeural" if is_female else "en-US-GuyNeural"
 
         rate_int = int((speed - 1.0) * 100)
         rate_str = f"{'+' if rate_int >= 0 else ''}{rate_int}%"
 
-        async def _gen_edge():
-            comm = edge_tts.Communicate(text=text.strip(), voice=edge_v, rate=rate_str)
-            await comm.save(out_path)
+        def _run_edge_tts():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+            try:
+                comm = edge_tts.Communicate(text=text.strip(), voice=edge_v, rate=rate_str)
+                loop.run_until_complete(comm.save(out_path))
+            finally:
+                loop.close()
 
-        asyncio.run(_gen_edge())
+        _run_edge_tts()
         if out_path and os.path.exists(out_path) and os.path.getsize(out_path) > 500:
             trim_audio_silence(out_path)
+            _save_to_cache(out_path)
             if log_fn:
                 log_fn(f"[edge-tts-fallback] [OK] Audio generated using {edge_v}")
             return True
@@ -255,15 +320,24 @@ def ai33_tts_generate(
         if log_fn:
             log_fn(f"[edge-tts-fallback] Error: {_e_edge}")
 
-    # Tier 4: Google gTTS Fallback
+    # --- Tier 4: Google gTTS Fallback (with script language code) ---
     try:
         from gtts import gTTS
-        tts = gTTS(text=text.strip(), lang="en")
+        is_hindi = any('\u0900' <= c <= '\u097F' for c in text)
+        is_arabic_urdu = any('\u0600' <= c <= '\u06FF' for c in text)
+        is_bengali = any('\u0980' <= c <= '\u09FF' for c in text)
+        is_tamil = any('\u0B80' <= c <= '\u0BFF' for c in text)
+        is_telugu = any('\u0C00' <= c <= '\u0C7F' for c in text)
+        is_cyrillic = any('\u0400' <= c <= '\u04FF' for c in text)
+        
+        gtts_lang = "hi" if is_hindi else ("ur" if is_arabic_urdu else ("bn" if is_bengali else ("ta" if is_tamil else ("te" if is_telugu else ("ru" if is_cyrillic else "en")))))
+        tts = gTTS(text=text.strip(), lang=gtts_lang)
         tts.save(out_path)
         if out_path and os.path.exists(out_path) and os.path.getsize(out_path) > 500:
             trim_audio_silence(out_path)
+            _save_to_cache(out_path)
             if log_fn:
-                log_fn("[gtts-fallback] [OK] Audio generated via gTTS")
+                log_fn(f"[gtts-fallback] [OK] Audio generated via gTTS ({gtts_lang})")
             return True
     except Exception:
         pass
