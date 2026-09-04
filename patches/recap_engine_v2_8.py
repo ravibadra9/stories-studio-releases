@@ -2079,6 +2079,8 @@ def build_project(video_path: str, script_path: str, edit_plan_path: str,
         if tts_tasks:
             _log(log_callback, f"[parallel-tts] Generating {len(tts_tasks)} audio beats in parallel ({max_tts_workers} workers)...")
             def _gen_job(idx, b, r_path):
+                if idx > 0:
+                    time.sleep(min(1.0, (idx % max(1, max_tts_workers)) * 0.12))
                 generate_tts(b.text, voice_id, tts_model_id, elevenlabs_key, r_path,
                              stability=stability, similarity_boost=similarity_boost,
                              log_callback=log_callback)
