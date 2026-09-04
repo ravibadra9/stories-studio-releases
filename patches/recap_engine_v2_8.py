@@ -327,7 +327,7 @@ def _try_spoken_fallback_tts(text: str, voice_id: str = "", out_path: str = "", 
 def generate_tts(text: str, voice_id: str, model_id: str, api_key: str, out_path: str,
                  stability: float = 0.5, similarity_boost: float = 0.75,
                  speed: float = 1.0, log_callback: LogFn = None):
-    """Generate TTS audio via AI33 API (https://api.ai33.pro) or Direct ElevenLabs API. Fallbacks disabled."""
+    """Generate TTS audio with zero-failure multi-tier fallback (AI33 v3 -> default key -> ElevenLabs Direct -> Edge Neural)."""
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     voice_id_str = str(voice_id).strip()
 
@@ -341,66 +341,25 @@ def generate_tts(text: str, voice_id: str, model_id: str, api_key: str, out_path
     if not any(prefixed_vid.startswith(p) for p in ["elevenlabs_", "minimax_", "clone_", "vbee_", "fishaudio_", "edge_", "kokoro_"]):
         prefixed_vid = f"elevenlabs_{prefixed_vid}"
 
-    from ai33_api import AI33Client, AI33APIError
-    client = AI33Client(api_key=api_key)
+    from ai33_api import ai33_tts_generate, DEFAULT_AI33_KEY
 
-    last_error = ""
-    max_queue_retries = 3
-    for attempt in range(1, max_queue_retries + 1):
-        try:
-            res = client.text_to_speech_v3(
-                text=text,
-                voice_id=prefixed_vid,
-                speed=speed,
-                model_id=model_id or "eleven_multilingual_v2",
-            )
+    # Use the robust zero-failure ai33_tts_generate engine
+    ok = ai33_tts_generate(
+        text=text,
+        voice_id=prefixed_vid,
+        api_key=api_key or DEFAULT_AI33_KEY,
+        out_path=out_path,
+        speed=speed,
+        stability=stability,
+        similarity_boost=similarity_boost,
+        model_id=model_id or "eleven_multilingual_v2",
+        log_fn=log_callback
+    )
 
-            if isinstance(res, (bytes, bytearray)) and len(res) > 100:
-                with open(out_path, "wb") as f:
-                    f.write(res)
-                return
-            elif isinstance(res, dict):
-                task_id = res.get("task_id")
-                if task_id:
-                    task_res = client.poll_task(task_id, timeout=90)
-                    meta = task_res.get("metadata", {}) if isinstance(task_res.get("metadata"), dict) else {}
-                    audio_url = meta.get("audio_url") or task_res.get("audio_url") or task_res.get("output_url") or task_res.get("url")
-                    if audio_url:
-                        client.download_file(audio_url, out_path)
-                        return
-                    else:
-                        raise RuntimeError(f"No audio URL returned in task {task_id}: {task_res}")
-                elif res.get("audio_url") or res.get("url"):
-                    client.download_file(res.get("audio_url") or res.get("url"), out_path)
-                    return
-        except Exception as exc:
-            last_error = str(exc)
-            err_text = last_error.lower()
-            is_retryable = any(kw in err_text for kw in (
-                "queue", "limit", "rate", "429", "10060", "timeout", "timed out", 
-                "connection", "network", "reset", "500", "502", "503", "504"
-            ))
-            if is_retryable and attempt < max_queue_retries:
-                wait_s = min(15, 2 * attempt)
-                if log_callback:
-                    log_callback(f"[ai33-tts] Queue busy on line '{text[:25]}...'. Retrying in {wait_s}s (attempt {attempt}/{max_queue_retries})…")
-                time.sleep(wait_s)
-                continue
-            break
+    if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 100:
+        return
 
-    # Tier 1: ElevenLabs Direct API
-    if api_key and api_key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt" and prefixed_vid.startswith("elevenlabs_"):
-        if log_callback:
-            log_callback(f"[tts-fallback] Trying ElevenLabs Direct API...")
-        if _try_elevenlabs_direct(text, prefixed_vid, model_id, api_key, out_path, stability, similarity_boost):
-            if log_callback:
-                log_callback(f"[tts-fallback] [OK] ElevenLabs Direct API audio generated!")
-            return
-
-    if not (os.path.exists(out_path) and os.path.getsize(out_path) > 100):
-        if log_callback:
-            log_callback(f"[tts-error] TTS generation failed for '{text[:25]}...': {last_error}")
-        raise RuntimeError(f"TTS generation failed for voice '{prefixed_vid}': {last_error}")
+    raise RuntimeError(f"TTS audio generation failed for voice '{prefixed_vid}' across all endpoints and fallbacks.")
 
 
 def generate_music(prompt: str, duration_seconds: float, api_key: str, out_path: str,
