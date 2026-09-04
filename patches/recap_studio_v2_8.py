@@ -571,7 +571,7 @@ class RecapStudioV2(ctk.CTk):
             if os.path.exists(def_cache):
                 target_dirs.append(def_cache)
         
-        prev_cache = os.path.abspath(".preview_cache")
+        prev_cache = getattr(self, "preview_cache_dir", os.path.abspath(".preview_cache"))
         if os.path.exists(prev_cache):
             target_dirs.append(prev_cache)
 
@@ -1378,7 +1378,7 @@ class RecapStudioV2(ctk.CTk):
         try:
             from PIL import Image, ImageTk
             video_path = self.video_entry.get().strip()
-            temp_preview = os.path.abspath(".preview_cache/canvas_editor_base.jpg")
+            temp_preview = os.path.join(self.preview_cache_dir, "canvas_editor_base.jpg")
             os.makedirs(os.path.dirname(temp_preview), exist_ok=True)
 
             if video_path and os.path.exists(video_path):
@@ -1491,7 +1491,7 @@ class RecapStudioV2(ctk.CTk):
             video_p = self.video_entry.get().strip()
             logo_p = self.logo_entry.get().strip()
             font_p = self.custom_font_entry.get().strip() if hasattr(self, "custom_font_entry") else ""
-            out_preview = os.path.abspath(".preview_cache/logo_caption_preview.png")
+            out_preview = os.path.join(self.preview_cache_dir, "logo_caption_preview.png")
 
             fsize = int(self.caption_size_slider.get())
             l_width = int(self.logo_width_slider.get())
