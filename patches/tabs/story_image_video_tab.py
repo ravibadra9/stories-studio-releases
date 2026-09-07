@@ -2166,13 +2166,42 @@ class StoryImageVideoTab(ctk.CTkFrame):
                 payload=params
             )
             self.log(f"[queue] Added job '{task.title}' to Master Queue (ID: {task.id})")
+            # Auto-clear the current tab so it is completely fresh for the next video!
+            self.reset_tab_form()
             messagebox.showinfo(
                 "Task Added to Master Queue",
                 f"✓ '{task_title}' has been sent to the Master Render Queue!\n\n"
-                f"Go to the '🗂 Queue' tab to run tasks sequentially or in parallel."
+                f"• Tab form has been reset fresh for your next video.\n"
+                f"• Check the '🗂 Queue' tab for live rendering progress."
             )
         except Exception as e:
             messagebox.showerror("Queue Error", f"Failed to add task to Master Queue:\n{e}")
+
+    def reset_tab_form(self):
+        """Clears all inputs and parsed scenes so the tab is 100% clean and ready for the next video."""
+        try:
+            self.script_box.delete("1.0", "end")
+            self.parsed_scenes = []
+            self.bulk_images = []
+            self.scene_image_map = {}
+            for w in self.scene_tree.winfo_children():
+                try:
+                    w.destroy()
+                except Exception:
+                    pass
+            placeholder = ctk.CTkLabel(
+                self.scene_tree,
+                text="Paste script and click '⚡ Parse Scenes' to load storyboard inspector.",
+                font=ctk.CTkFont(size=11),
+                text_color=C_MUTED
+            )
+            placeholder.pack(pady=40)
+            self.parse_badge.configure(text="0 Scenes Parsed", text_color=C_MUTED)
+            if hasattr(self, "status_bar_lbl"):
+                self.status_bar_lbl.configure(text="● Auto Save Enabled  |  Scenes: 0  |  Status: Ready for new video")
+            self.log("[workspace] Form cleared — Ready for new video!")
+        except Exception as e:
+            self.log(f"[workspace] Form reset error: {e}")
 
     def _render_queue_list(self):
         for w in self.queue_container.winfo_children():
