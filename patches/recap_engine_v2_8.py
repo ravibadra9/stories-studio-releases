@@ -327,7 +327,7 @@ def _try_spoken_fallback_tts(text: str, voice_id: str = "", out_path: str = "", 
 def generate_tts(text: str, voice_id: str, model_id: str, api_key: str, out_path: str,
                  stability: float = 0.5, similarity_boost: float = 0.75,
                  speed: float = 1.0, log_callback: LogFn = None):
-    """Generate TTS audio with zero-failure multi-tier fallback (AI33 v3 -> default key -> ElevenLabs Direct -> Edge Neural)."""
+    """Generate TTS audio via AI33 API (https://api.ai33.pro) or Direct ElevenLabs API. Fallbacks disabled."""
     os.makedirs(os.path.dirname(os.path.abspath(out_path)), exist_ok=True)
     voice_id_str = str(voice_id).strip()
 
@@ -341,25 +341,66 @@ def generate_tts(text: str, voice_id: str, model_id: str, api_key: str, out_path
     if not any(prefixed_vid.startswith(p) for p in ["elevenlabs_", "minimax_", "clone_", "vbee_", "fishaudio_", "edge_", "kokoro_"]):
         prefixed_vid = f"elevenlabs_{prefixed_vid}"
 
-    from ai33_api import ai33_tts_generate, DEFAULT_AI33_KEY
+    from ai33_api import AI33Client, AI33APIError
+    client = AI33Client(api_key=api_key)
 
-    # Use the robust zero-failure ai33_tts_generate engine
-    ok = ai33_tts_generate(
-        text=text,
-        voice_id=prefixed_vid,
-        api_key=api_key or DEFAULT_AI33_KEY,
-        out_path=out_path,
-        speed=speed,
-        stability=stability,
-        similarity_boost=similarity_boost,
-        model_id=model_id or "eleven_multilingual_v2",
-        log_fn=log_callback
-    )
+    last_error = ""
+    max_queue_retries = 3
+    for attempt in range(1, max_queue_retries + 1):
+        try:
+            res = client.text_to_speech_v3(
+                text=text,
+                voice_id=prefixed_vid,
+                speed=speed,
+                model_id=model_id or "eleven_multilingual_v2",
+            )
 
-    if ok and os.path.exists(out_path) and os.path.getsize(out_path) > 100:
-        return
+            if isinstance(res, (bytes, bytearray)) and len(res) > 100:
+                with open(out_path, "wb") as f:
+                    f.write(res)
+                return
+            elif isinstance(res, dict):
+                task_id = res.get("task_id")
+                if task_id:
+                    task_res = client.poll_task(task_id, timeout=90)
+                    meta = task_res.get("metadata", {}) if isinstance(task_res.get("metadata"), dict) else {}
+                    audio_url = meta.get("audio_url") or task_res.get("audio_url") or task_res.get("output_url") or task_res.get("url")
+                    if audio_url:
+                        client.download_file(audio_url, out_path)
+                        return
+                    else:
+                        raise RuntimeError(f"No audio URL returned in task {task_id}: {task_res}")
+                elif res.get("audio_url") or res.get("url"):
+                    client.download_file(res.get("audio_url") or res.get("url"), out_path)
+                    return
+        except Exception as exc:
+            last_error = str(exc)
+            err_text = last_error.lower()
+            is_retryable = any(kw in err_text for kw in (
+                "queue", "limit", "rate", "429", "10060", "timeout", "timed out", 
+                "connection", "network", "reset", "500", "502", "503", "504"
+            ))
+            if is_retryable and attempt < max_queue_retries:
+                wait_s = min(15, 2 * attempt)
+                if log_callback:
+                    log_callback(f"[ai33-tts] Queue busy on line '{text[:25]}...'. Retrying in {wait_s}s (attempt {attempt}/{max_queue_retries})…")
+                time.sleep(wait_s)
+                continue
+            break
 
-    raise RuntimeError(f"TTS audio generation failed for voice '{prefixed_vid}' across all endpoints and fallbacks.")
+    # Tier 1: ElevenLabs Direct API
+    if api_key and api_key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt" and prefixed_vid.startswith("elevenlabs_"):
+        if log_callback:
+            log_callback(f"[tts-fallback] Trying ElevenLabs Direct API...")
+        if _try_elevenlabs_direct(text, prefixed_vid, model_id, api_key, out_path, stability, similarity_boost):
+            if log_callback:
+                log_callback(f"[tts-fallback] [OK] ElevenLabs Direct API audio generated!")
+            return
+
+    if not (os.path.exists(out_path) and os.path.getsize(out_path) > 100):
+        if log_callback:
+            log_callback(f"[tts-error] TTS generation failed for '{text[:25]}...': {last_error}")
+        raise RuntimeError(f"TTS generation failed for voice '{prefixed_vid}': {last_error}")
 
 
 def generate_music(prompt: str, duration_seconds: float, api_key: str, out_path: str,
@@ -1189,62 +1230,145 @@ def mux_audio(video_only_path: str, audio_path: str, out_path: str):
     ])
 
 
-def _color_to_ass_hex(color_name: str) -> tuple[str, str, str, str, int, int]:
-    """
-    Returns (PrimaryColour, SecondaryColour, OutlineColour, BackColour, outline_w, shadow_w)
-    in ASS &HAABBGGRR hex format.
-    """
+def _color_to_ass_hex(color_name: str) -> tuple[str, str, str, int, int]:
     c = str(color_name).strip().lower()
-    if "yellow pop" in c or ("yellow" in c and "pill" not in c and "box" not in c and "cinema" not in c):
-        return ("&H0000FFFF", "&H00FFFFFF", "&H00000000", "&H80000000", 4, 2)
-    elif "karaoke" in c:
-        return ("&H0000FFFF", "&H00FFFFFF", "&H00000000", "&H80000000", 4, 2)
-    elif "white & black box" in c or ("box" in c and "yellow" not in c):
-        return ("&H00FFFFFF", "&H0000FFFF", "&H00000000", "&HB0000000", 6, 0)
-    elif "neon cyan" in c or "cyan" in c or "teal" in c:
-        return ("&H00FFFF00", "&H00FFFFFF", "&H00400000", "&H80000000", 4, 2)
-    elif "gold" in c or "luxury" in c:
-        return ("&H0000D7FF", "&H00FFFFFF", "&H00000000", "&H80000000", 4, 3)
+    if "cyan" in c or "neon cyan" in c:
+        return ("&H00FFFF00", "&H00FFFFFF", "&H00400000", 3, 2)
     elif "red & white" in c or "red" in c:
-        return ("&H000000FF", "&H00FFFFFF", "&H00000000", "&H80000000", 4, 2)
-    elif "cyberpunk" in c or "green" in c or "emerald" in c:
-        return ("&H0000FF00", "&H00FFFFFF", "&H00000000", "&H80000000", 4, 2)
-    elif "purple" in c or "violet" in c or "electric purple" in c:
-        return ("&H00FF00FF", "&H00FFFF00", "&H00000000", "&H80000000", 4, 2)
-    elif "yellow pill" in c or "cinema yellow" in c or "pill" in c:
-        return ("&H00000000", "&H00000000", "&H0000D4FF", "&H0000D4FF", 6, 0)
+        return ("&H000000FF", "&H00FFFFFF", "&H00000000", 3, 2)
+    elif "gold" in c:
+        return ("&H0000D7FF", "&H00FFFFFF", "&H00000000", 4, 3)
+    elif "purple" in c or "gradient purple" in c:
+        return ("&H00FF00FF", "&H00FFFF00", "&H00000000", 3, 2)
+    elif "green" in c or "cyberpunk" in c:
+        return ("&H0000FF00", "&H00FFFFFF", "&H00000000", 4, 2)
     elif "orange" in c or "fire" in c:
-        return ("&H000080FF", "&H00FFFFFF", "&H00000000", "&H80000000", 4, 2)
+        return ("&H000080FF", "&H00FFFFFF", "&H00000000", 3, 2)
     elif "pastel blue" in c or "blue" in c:
-        return ("&H00F0A030", "&H00FFFFFF", "&H00000000", "&H80000000", 3, 1)
-    else:  # Minimal White Shadow
-        return ("&H00FFFFFF", "&H0000FFFF", "&H00151515", "&H80000000", 3, 2)
+        return ("&H00F0A030", "&H00FFFFFF", "&H00000000", 2, 1)
+    elif "yellow pill" in c or "pill" in c:
+        return ("&H00000000", "&H00000000", "&H0000D4FF", 2, 0)
+    elif "cinema yellow" in c:
+        return ("&H0005E3FF", "&H00FFFFFF", "&H00000000", 4, 2)
+    elif "karaoke" in c:
+        return ("&H0000FFFF", "&H0000FF00", "&H00000000", 3, 2)
+    elif "box" in c:
+        return ("&H00FFFFFF", "&H0000FFFF", "&H00000000", 1, 0)
+    elif "yellow" in c:
+        return ("&H0000FFFF", "&H00FFFFFF", "&H00000000", 3, 2)
+    else:  # Classic White Shadow
+        return ("&H00FFFFFF", "&H0000FFFF", "&H00000000", 3, 2)
+
+
+def _get_full_profile(path: str) -> dict:
+    """Probe width/height/fps/duration AND sample aspect ratio for concat matching."""
+    out = run([
+        "ffprobe", "-v", "error", "-select_streams", "v:0",
+        "-show_entries",
+        "stream=width,height,avg_frame_rate,r_frame_rate,sample_aspect_ratio:format=duration",
+        "-of", "json", path,
+    ])
+    data = json.loads(out)
+    streams = data.get("streams") or []
+    if not streams:
+        raise RuntimeError(f"No video stream found in: {path}")
+    st = streams[0]
+    width = max(2, int(st.get("width") or 1920)); width -= width % 2
+    height = max(2, int(st.get("height") or 1080)); height -= height % 2
+    rate = st.get("avg_frame_rate") or st.get("r_frame_rate") or "25/1"
+    try:
+        a, b = rate.split("/", 1)
+        fps = float(a) / max(float(b), 1e-9)
+    except Exception:
+        fps = 25.0
+    if not (1.0 <= fps <= 120.0):
+        fps = 25.0
+    try:
+        duration = float((data.get("format") or {}).get("duration") or 0.0)
+    except Exception:
+        duration = 0.0
+    return {"width": width, "height": height, "fps": fps, "duration": duration}
+
+
+def _normalize_for_concat(src_path: str, out_path: str, target_w: int, target_h: int,
+                          target_fps: float, render_preset: str = "fast",
+                          log_callback: LogFn = None) -> str:
+    """Re-encode a clip so it EXACTLY matches the target profile before concat.
+
+    Forces identical resolution (with letterbox pad, no stretch), fps, SAR 1:1,
+    yuv420p, and a stereo 44.1kHz AAC audio track (silent track added if the
+    source has no audio). This is what makes intro + recap concat playable.
+    """
+    _log(log_callback, f"[normalize] {os.path.basename(src_path)} -> {target_w}x{target_h}@{target_fps:.3f}")
+    vf = (
+        f"scale={target_w}:{target_h}:force_original_aspect_ratio=decrease,"
+        f"pad={target_w}:{target_h}:(ow-iw)/2:(oh-ih)/2:color=black,"
+        f"setsar=1,fps={target_fps:.6f},format=yuv420p"
+    )
+    cmd = [
+        "ffmpeg", "-y", "-i", src_path,
+        "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+        "-map", "0:v:0", "-map", "0:a:0?",
+        "-vf", vf,
+    ] + _encode_args(render_preset) + [
+        "-r", f"{target_fps:.6f}",
+        "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+        "-shortest", "-movflags", "+faststart", out_path,
+    ]
+    try:
+        run(cmd)
+    except RuntimeError:
+        cmd2 = [
+            "ffmpeg", "-y", "-i", src_path,
+            "-f", "lavfi", "-i", "anullsrc=channel_layout=stereo:sample_rate=44100",
+            "-map", "0:v:0", "-map", "1:a:0",
+            "-vf", vf,
+        ] + _encode_args(render_preset) + [
+            "-r", f"{target_fps:.6f}",
+            "-c:a", "aac", "-b:a", "192k", "-ar", "44100", "-ac", "2",
+            "-shortest", "-movflags", "+faststart", out_path,
+        ]
+        run(cmd2)
+    if not _file_nonempty(out_path):
+        raise RuntimeError(f"Normalization failed for {src_path}")
+    return out_path
 
 
 def add_watermark(video_path: str, logo_path: str, out_path: str, render_preset: str = "fast",
                   position: str = "Top-Right", x_offset: int = 24, y_offset: int = 24,
                   logo_width: int = 200, custom_x: Optional[int] = None, custom_y: Optional[int] = None,
-                  log_callback: Optional[Callable[[str], None]] = None):
-    """Add watermark/logo overlay with customizable size/scale and drag & drop coordinates."""
+                  log_callback: Optional[Callable[[str], None]] = None,
+                  preview_base_h: int = 720):
+    """Add watermark. Offsets/size/custom coords are scaled from the 720p preview
+    space to the actual output resolution so the logo lands where the user placed it."""
     pos = position.strip()
-    scale_expr = f"scale={max(40, min(800, int(logo_width)))}:-1"
+
+    # Scale factor: preview canvas was preview_base_h tall (default 720). Real output may be taller.
+    prof = _get_full_profile(video_path)
+    out_h = prof["height"]
+    sf = out_h / float(max(1, preview_base_h))
+
+    scaled_logo_w = max(40, min(2000, int(round(logo_width * sf))))
+    sx = int(round(x_offset * sf))
+    sy = int(round(y_offset * sf))
+    scale_expr = f"scale={scaled_logo_w}:-1"
 
     if custom_x is not None and custom_y is not None and ("custom" in pos.lower() or pos == "Custom"):
-        overlay_expr = f"{int(custom_x)}:{int(custom_y)}"
+        overlay_expr = f"{int(round(custom_x * sf))}:{int(round(custom_y * sf))}"
     elif pos == "Top-Left":
-        overlay_expr = f"{x_offset}:{y_offset}"
+        overlay_expr = f"{sx}:{sy}"
     elif pos == "Bottom-Right":
-        overlay_expr = f"W-w-{x_offset}:H-h-{y_offset}"
+        overlay_expr = f"W-w-{sx}:H-h-{sy}"
     elif pos == "Bottom-Left":
-        overlay_expr = f"{x_offset}:H-h-{y_offset}"
+        overlay_expr = f"{sx}:H-h-{sy}"
     elif pos == "Center":
         overlay_expr = "(W-w)/2:(H-h)/2"
     elif "custom" in pos.lower():
         cx = custom_x if custom_x is not None else x_offset
         cy = custom_y if custom_y is not None else y_offset
-        overlay_expr = f"{int(cx)}:{int(cy)}"
+        overlay_expr = f"{int(round(cx * sf))}:{int(round(cy * sf))}"
     else:  # Top-Right default
-        overlay_expr = f"W-w-{x_offset}:{y_offset}"
+        overlay_expr = f"W-w-{sx}:{sy}"
 
     dur = get_duration(video_path)
     run_with_progress([
@@ -1254,103 +1378,40 @@ def add_watermark(video_path: str, logo_path: str, out_path: str, render_preset:
     ], total_duration=dur, log_callback=log_callback, step_name="Watermark")
 
 
-def hex_to_ass_abgr(hex_str: str, alpha: int = 0) -> str:
-    """Converts #RRGGBB or RRGGBB to ASS &HAABBGGRR hex format."""
-    if not hex_str: return f"&H{alpha:02X}FFFFFF"
-    h = str(hex_str).strip().lstrip("#")
-    if len(h) == 6:
-        r, g, b = h[0:2], h[2:4], h[4:6]
-        return f"&H{alpha:02X}{b}{g}{r}"
-    elif len(h) == 8:
-        r, g, b, a = h[0:2], h[2:4], h[4:6], h[6:8]
-        return f"&H{a}{b}{g}{r}"
-    return f"&H{alpha:02X}FFFFFF"
-
-
 def generate_capcut_ass_file(beats: List[EditBeat], segment_durations: List[float], ass_out_path: str,
                              font_name: str = "Impact", font_size: int = 28,
                              preset_style: str = "CapCut Yellow Pop", position: str = "Bottom-Center",
-                             text_case: str = "ALL CAPS", max_words_per_line: Union[int, str] = 10,
-                             max_lines_per_caption: Union[int, str] = 1,
+                             text_case: str = "ALL CAPS", max_words_per_line: Union[int, str] = 4,
                              custom_font_path: Optional[str] = None,
                              custom_caption_x: Optional[int] = None, custom_caption_y: Optional[int] = None,
-                             target_w: int = 1280, target_h: int = 720,
-                             custom_font_color: Optional[str] = None,
-                             custom_stroke_color: Optional[str] = None,
-                             custom_stroke_width: Optional[int] = None,
-                             custom_shadow_color: Optional[str] = None,
-                             custom_shadow_width: Optional[int] = None,
-                             custom_box_color: Optional[str] = None,
-                             custom_box_opacity: Optional[float] = None):
-    """Generates an Advanced SubStation Alpha (.ass) subtitle file with CapCut font styling, text casing, word choose & line count controls, and custom color/stroke/shadow overrides."""
+                             max_lines_per_screen: Union[int, str] = 1,
+                             **kwargs):
+    """Generates an Advanced SubStation Alpha (.ass) subtitle file with CapCut font styling, text casing, custom font, words per line & lines per screen."""
     os.makedirs(os.path.dirname(os.path.abspath(ass_out_path)) or ".", exist_ok=True)
-    primary_c, secondary_c, outline_c, back_c, outline_w, shadow_w = _color_to_ass_hex(preset_style)
-
-    # Apply manual/custom color overrides if provided
-    if custom_font_color and str(custom_font_color).strip():
-        primary_c = hex_to_ass_abgr(custom_font_color, 0)
-    if custom_stroke_color and str(custom_stroke_color).strip():
-        outline_c = hex_to_ass_abgr(custom_stroke_color, 0)
-    if custom_stroke_width is not None and int(custom_stroke_width) >= 0:
-        outline_w = int(custom_stroke_width)
-    if custom_shadow_color and str(custom_shadow_color).strip():
-        back_c = hex_to_ass_abgr(custom_shadow_color, 128)
-    if custom_shadow_width is not None and int(custom_shadow_width) >= 0:
-        shadow_w = int(custom_shadow_width)
+    primary_c, secondary_c, outline_c, outline_w, shadow_w = _color_to_ass_hex(preset_style)
 
     alignment = 2
-    pos_lower = str(position).lower()
+    pos_lower = position.lower()
     if "top" in pos_lower:
         alignment = 8
-    elif "middle" in pos_lower or ("center" in pos_lower and "bottom" not in pos_lower):
+    elif "middle" in pos_lower or "center" in pos_lower and "bottom" not in pos_lower:
         alignment = 5
 
-    border_style = 3 if ("box" in preset_style.lower() or "pill" in preset_style.lower()) else 1
-
-    if custom_box_color and str(custom_box_color).strip():
-        border_style = 3
-        box_opa = float(custom_box_opacity) if custom_box_opacity is not None else 0.8
-        alpha_val = max(0, min(255, int((1.0 - box_opa) * 255)))
-        back_c = hex_to_ass_abgr(custom_box_color, alpha_val)
-        outline_c = back_c
+    border_style = 3 if "box" in preset_style.lower() else 1
 
     effective_font = font_name
     if custom_font_path and os.path.exists(custom_font_path):
-        try:
-            from PIL import ImageFont
-            f_test = ImageFont.truetype(custom_font_path, 30)
-            rec = f_test.getname()
-            if rec and rec[0]:
-                effective_font = rec[0]
-            else:
-                effective_font = Path(custom_font_path).stem
-        except Exception:
-            effective_font = Path(custom_font_path).stem
-
-    pw = max(480, int(target_w)) if target_w else 1280
-    ph = max(360, int(target_h)) if target_h else 720
-
-    scale_factor = pw / 1280.0
-    effective_fsize = max(16, int(font_size * scale_factor))
-
-    # Calculate vertical margin: For vertical 9:16 shorts (ph > pw), leave ~14% safe margin at bottom
-    if ph > pw:
-        margin_v = max(80, int(ph * 0.14)) if alignment == 2 else max(40, int(ph * 0.05))
-    else:
-        margin_v = max(30, int(ph * 0.05))
-
-    margin_l = max(20, int(pw * 0.04))
-    margin_r = max(20, int(pw * 0.04))
+        effective_font = Path(custom_font_path).stem
 
     header_str = f"""[Script Info]
 ScriptType: v4.00+
-PlayResX: {pw}
-PlayResY: {ph}
+PlayResX: 1280
+PlayResY: 720
 WrapStyle: 0
 
 [V4+ Styles]
 Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding
-Style: CapCutStyle,{effective_font},{effective_fsize},{primary_c},{secondary_c},{outline_c},{back_c},-1,0,0,0,100,100,0,0,{border_style},{outline_w},{shadow_w},{alignment},{margin_l},{margin_r},{margin_v},1
+Style: CapCutStyle,{effective_font},{font_size},{primary_c},{secondary_c},{outline_c},&H80000000,-1,0,0,0,100,100,0,0,{border_style},{outline_w},{shadow_w},{alignment},40,40,36,1
 
 [Events]
 Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
@@ -1382,77 +1443,54 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
         elif "6 word" in s or s == "6": return 6
         elif "7 word" in s or s == "7": return 7
         elif "8 word" in s or s == "8": return 8
-        elif "9 word" in s or s == "9": return 9
-        elif "10 word" in s or s == "10": return 10
-        elif "full" in s or "sentence" in s or "line" in s: return 50
-        import re
-        m = re.search(r'(\d+)', s)
-        if m:
-            return max(1, min(50, int(m.group(1))))
-        return 10
+        try:
+            import re
+            m = re.search(r'\d+', s)
+            if m: return max(1, min(50, int(m.group(0))))
+        except Exception: pass
+        return 4
 
     def parse_max_lines(val) -> int:
         s = str(val).lower().strip()
-        if "1 line" in s or s == "1": return 1
-        elif "2 line" in s or s == "2": return 2
+        if "2 line" in s or s == "2": return 2
         elif "3 line" in s or s == "3": return 3
         elif "4 line" in s or s == "4": return 4
-        elif "auto" in s: return 2
-        try: return max(1, min(10, int(val)))
-        except Exception: return 1
+        try:
+            import re
+            m = re.search(r'\d+', s)
+            if m: return max(1, min(10, int(m.group(0))))
+        except Exception: pass
+        return 1
 
     max_w = parse_max_words(max_words_per_line)
-    max_l = parse_max_lines(max_lines_per_caption)
-    words_per_event = max_w * max_l
-
-    pos_tag = ""
-    if custom_caption_x is not None and custom_caption_y is not None:
-        try:
-            cx = float(custom_caption_x)
-            cy = float(custom_caption_y)
-            if 0.0 <= cx <= 1.0:
-                cx = cx * pw
-            if 0.0 <= cy <= 1.0:
-                cy = cy * ph
-            pos_tag = f"{{\\an5\\pos({int(cx)},{int(cy)})}}"
-        except Exception:
-            pos_tag = ""
+    max_l = parse_max_lines(max_lines_per_screen)
+    pos_tag = f"{{\\pos({int(custom_caption_x)},{int(custom_caption_y)})}}" if (custom_caption_x is not None and custom_caption_y is not None) else ""
 
     for i, beat in enumerate(beats):
         dur = segment_durations[i] if i < len(segment_durations) else 3.0
         text = apply_casing(beat.text.strip())
         words = text.split()
 
-        if not words:
-            current_time += dur
-            continue
+        # Step 1: Wrap words into lines of max_w words
+        raw_lines = [" ".join(words[k:k + max_w]) for k in range(0, len(words), max_w)] if words else []
 
-        # Group words into events based on words_per_line * lines_on_screen
-        if len(words) > words_per_event:
-            event_word_slices = [words[k:k + words_per_event] for k in range(0, len(words), words_per_event)]
-        else:
-            event_word_slices = [words]
+        # Step 2: Group lines into screens of at most max_l lines
+        screens = []
+        for k in range(0, len(raw_lines), max_l):
+            screen_lines = raw_lines[k:k + max_l]
+            screens.append(r"\N".join(screen_lines))
 
-        # For each event, if max_l > 1 and slice exceeds max_w, join lines with ASS \N
-        chunks = []
-        for w_slice in event_word_slices:
-            if max_l > 1 and len(w_slice) > max_w:
-                sub_lines = [" ".join(w_slice[j:j + max_w]) for j in range(0, len(w_slice), max_w)]
-                chunks.append(r"\N".join(sub_lines))
-            else:
-                chunks.append(" ".join(w_slice))
-
+        chunks = screens
         if not chunks:
             current_time += dur
             continue
 
-        # Real-time Voice Sync Formula: Weight each word/chunk by character length & punctuation pauses
+        # Real-time Voice Sync Formula: Weight each screen by character length & punctuation pauses
         chunk_weights = []
         for chk in chunks:
-            raw_chk = chk.replace(r"\N", " ")
-            chk_w = sum(len(w) for w in raw_chk.split())
-            # Extra pause weight for punctuation marks (. , ! ? ; :)
-            if any(raw_chk.strip().endswith(p) for p in [".", ",", "!", "?", ";", ":"]):
+            clean_chk = chk.replace(r"\N", " ")
+            chk_w = sum(len(w) for w in clean_chk.split())
+            if any(chk.endswith(p) for p in [".", ",", "!", "?", ";", ":"]):
                 chk_w += 2.5
             chunk_weights.append(max(1.0, float(chk_w)))
 
@@ -1469,23 +1507,22 @@ Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text
             end_str = format_time(sub_end)
 
             if "karaoke" in preset_style.lower():
-                lines_in_chunk = chunk_text.split(r"\N")
-                all_k_lines = []
-                total_chunk_words = sum(len(ln.split()) for ln in lines_in_chunk)
-                ms_per_word = int((c_dur * 100) / max(1, total_chunk_words))
-                for ln in lines_in_chunk:
-                    ln_words = ln.split()
-                    if ln_words:
-                        k_ln = "".join(f"{{\\k{ms_per_word}}}{w} " for w in ln_words).strip()
-                        all_k_lines.append(k_ln)
-                    else:
-                        all_k_lines.append(ln)
-                k_text = r"\N".join(all_k_lines)
-                events.append(f"Dialogue: 0,{start_str},{end_str},CapCutStyle,,0,0,0,,{pos_tag}{k_text}")
+                screen_sublines = chunk_text.split(r"\N")
+                total_words_in_scr = sum(len(sl.split()) for sl in screen_sublines)
+                if total_words_in_scr > 0:
+                    ms_per_word = int((c_dur * 100) / max(1, total_words_in_scr))
+                    k_lines = []
+                    for sl in screen_sublines:
+                        k_lines.append("".join(f"{{\\k{ms_per_word}}}{w} " for w in sl.split()).strip())
+                    k_text = r"\N".join(k_lines)
+                    events.append(f"Dialogue: 0,{start_str},{end_str},CapCutStyle,,0,0,0,,{pos_tag}{k_text}")
+                else:
+                    events.append(f"Dialogue: 0,{start_str},{end_str},CapCutStyle,,0,0,0,,{pos_tag}{chunk_text}")
             else:
                 events.append(f"Dialogue: 0,{start_str},{end_str},CapCutStyle,,0,0,0,,{pos_tag}{chunk_text}")
 
         current_time += dur
+
 
     with open(ass_out_path, "w", encoding="utf-8") as f:
         f.write(header_str + "\n".join(events) + "\n")
@@ -1516,7 +1553,6 @@ def render_logo_caption_preview_frame(video_path: str, logo_path: Optional[str],
                                       caption_font: str = "Impact", caption_size: int = 28,
                                       caption_position: str = "Bottom-Center",
                                       caption_case: str = "ALL CAPS", caption_words_per_line: Union[int, str] = 10,
-                                      caption_lines: Union[int, str] = 1,
                                       custom_font_path: Optional[str] = None,
                                       custom_caption_x: Optional[int] = None, custom_caption_y: Optional[int] = None):
     """Renders a single 1280x720 PNG frame combining logo watermark & CapCut styled subtitle overlay for live GUI preview."""
@@ -1578,7 +1614,6 @@ def render_logo_caption_preview_frame(video_path: str, logo_path: Optional[str],
         generate_capcut_ass_file([sample_beat], [5.0], ass_sample, font_name=caption_font,
                                 font_size=caption_size, preset_style=caption_preset, position=caption_position,
                                 text_case=caption_case, max_words_per_line=caption_words_per_line,
-                                max_lines_per_caption=caption_lines,
                                 custom_font_path=custom_font_path,
                                 custom_caption_x=custom_caption_x, custom_caption_y=custom_caption_y)
         safe_ass = os.path.abspath(ass_sample).replace("\\", "/").replace(":", "\\:")
@@ -1602,34 +1637,80 @@ def render_logo_caption_preview_frame(video_path: str, logo_path: Optional[str],
 def build_movie(recap_video_path: str, intro_video_paths: List[str], target_duration_seconds: float,
                 out_movie_path: str, workdir: str, render_preset: str = "fast", log_callback: LogFn = None) -> str:
     """
-    Render a Recap Movie:
-    1. Prepend Intro Video(s) if provided.
-    2. Loop the main recap video as many times as needed to reach target_duration_seconds.
-    3. Concatenate all segments in proper sequence to produce final movie.
+    Render a Recap Movie (playable, normalized):
+    1. Pick a TARGET profile from the recap video (resolution/fps).
+    2. Normalize every intro + the recap to that exact profile (scale+pad, no stretch,
+       SAR 1:1, yuv420p, stereo 44.1k AAC). This is what fixes the frozen/unplayable
+       output caused by mismatched frame rate / bitrate / aspect ratio.
+    3. Loop the normalized recap to reach target_duration_seconds.
+    4. Concat everything (streams now match, so -c copy works cleanly).
     """
     intros = [os.path.abspath(p) for p in (intro_video_paths or []) if p and _file_nonempty(p)]
     recap = os.path.abspath(recap_video_path)
     if not _file_nonempty(recap):
         raise ValueError("Recap video file not found or empty.")
 
+    os.makedirs(workdir, exist_ok=True)
+    norm_dir = os.path.join(workdir, "movie_norm")
+    os.makedirs(norm_dir, exist_ok=True)
+
+    # 1) Target profile comes from the recap (the main content defines the standard)
+    prof = _get_full_profile(recap)
+    tw, th, tfps = prof["width"], prof["height"], prof["fps"]
+    _log(log_callback, f"[movie] Target profile: {tw}x{th} @ {tfps:.3f}fps")
+
     recap_dur = get_duration(recap)
     if recap_dur <= 0.5:
         raise ValueError("Recap video duration is too short for movie generation.")
 
-    intro_dur = sum(get_duration(p) for p in intros)
-    _log(log_callback, f"[movie] Intro videos duration: {intro_dur:.2f}s • Recap video duration: {recap_dur:.2f}s")
+    # 2) Normalize recap once
+    norm_recap = os.path.join(norm_dir, "recap_norm.mp4")
+    _normalize_for_concat(recap, norm_recap, tw, th, tfps, render_preset, log_callback)
+    recap_dur = get_duration(norm_recap)  # use normalized duration for loop math
 
+    # 2b) Normalize each intro
+    norm_intros = []
+    for idx, ip in enumerate(intros):
+        norm_ip = os.path.join(norm_dir, f"intro_{idx:02d}_norm.mp4")
+        _normalize_for_concat(ip, norm_ip, tw, th, tfps, render_preset, log_callback)
+        norm_intros.append(norm_ip)
+
+    intro_dur = sum(get_duration(p) for p in norm_intros)
+    _log(log_callback, f"[movie] Intro duration: {intro_dur:.2f}s • Recap duration: {recap_dur:.2f}s")
+
+    # 3) Loop math on the normalized recap
     remaining_dur = max(0.0, target_duration_seconds - intro_dur)
     loop_count = max(1, math.ceil(remaining_dur / recap_dur)) if target_duration_seconds > 0 else 1
+    _log(log_callback,
+         f"[movie] Target {target_duration_seconds/3600:.2f}h ({target_duration_seconds:.0f}s) • Looping recap {loop_count}x")
 
-    _log(log_callback, f"[movie] Target movie duration: {target_duration_seconds/3600:.2f}h ({target_duration_seconds:.0f}s) • Looping recap {loop_count} time(s)")
+    # 4) Concat: all clips share the exact same profile now, so stream-copy is safe.
+    movie_sequence = norm_intros + [norm_recap] * loop_count
+    if target_duration_seconds > 0:
+        raw_concat = os.path.join(workdir, "movie_raw_concat.mp4")
+        concat_video_only(movie_sequence, raw_concat, workdir, "movie_final", render_preset)
+        raw_dur = get_duration(raw_concat)
+        if raw_dur > target_duration_seconds + 0.5:
+            _log(log_callback, f"[movie] Trimming movie overflow ({raw_dur:.1f}s -> target {target_duration_seconds:.1f}s)...")
+            run([
+                "ffmpeg", "-y", "-i", raw_concat,
+                "-t", f"{target_duration_seconds:.3f}",
+                "-c", "copy", "-movflags", "+faststart", out_movie_path
+            ])
+        else:
+            if os.path.exists(out_movie_path):
+                try: os.remove(out_movie_path)
+                except OSError: pass
+            shutil.move(raw_concat, out_movie_path)
+    else:
+        concat_video_only(movie_sequence, out_movie_path, workdir, "movie_final", render_preset)
 
-    movie_sequence = intros + [recap] * loop_count
-    os.makedirs(workdir, exist_ok=True)
+    if not _file_nonempty(out_movie_path):
+        raise RuntimeError("Final movie assembly produced an empty file.")
 
-    concat_video_only(movie_sequence, out_movie_path, workdir, "movie_final", render_preset)
-    _log(log_callback, f"[movie] Final movie created: {out_movie_path}")
+    _log(log_callback, f"[movie] Final movie created: {out_movie_path} ({get_duration(out_movie_path):.1f}s)")
     return out_movie_path
+
 
 
 def mix_bgm(video_path: str, bgm_path: str, out_path: str, volume: float = 0.10,
@@ -2079,8 +2160,6 @@ def build_project(video_path: str, script_path: str, edit_plan_path: str,
         if tts_tasks:
             _log(log_callback, f"[parallel-tts] Generating {len(tts_tasks)} audio beats in parallel ({max_tts_workers} workers)...")
             def _gen_job(idx, b, r_path):
-                if idx > 0:
-                    time.sleep(min(1.0, (idx % max(1, max_tts_workers)) * 0.12))
                 generate_tts(b.text, voice_id, tts_model_id, elevenlabs_key, r_path,
                              stability=stability, similarity_boost=similarity_boost,
                              log_callback=log_callback)
@@ -2299,11 +2378,52 @@ if __name__ == "__main__":
     p.add_argument("--no-bgm-loop", action="store_true")
     p.add_argument("--narration-speed", type=float, default=1.05)
     p.add_argument("--render-preset", choices=["medium", "fast", "veryfast"], default="fast")
+
+    # --- Movie mode / intros / duration ---
+    p.add_argument("--render-mode", choices=["video", "movie"], default="video")
+    p.add_argument("--intro", action="append", default=[],
+                   help="Path to an intro video. Repeat --intro for multiple intros (order preserved).")
+    p.add_argument("--target-duration", type=float, default=3600.0,
+                   help="Target movie duration in SECONDS (used only when --render-mode movie).")
+    p.add_argument("--target-hours", type=float, default=None,
+                   help="Convenience: target movie duration in HOURS. Overrides --target-duration if set.")
+
+    # --- Logo placement & size matching preview canvas ---
+    p.add_argument("--logo-position", default="Top-Right")
+    p.add_argument("--logo-x", type=int, default=24)
+    p.add_argument("--logo-y", type=int, default=24)
+    p.add_argument("--logo-width", type=int, default=200)
+
     a = p.parse_args()
     if a.voiceover_mode == "generate" and not a.elevenlabs_key:
         raise SystemExit("ELEVENLABS_API_KEY missing for Generate Voiceover mode")
-    build_project(a.video, a.script, a.plan, a.voice_id, a.model_id,
-                  a.elevenlabs_key or "", a.out, a.cache_dir, a.logo, a.bgm,
-                  a.bgm_volume, not a.no_bgm_loop, voice_volume=a.voice_volume, narration_speed=a.narration_speed,
-                  render_preset=a.render_preset, voiceover_mode=a.voiceover_mode,
-                  uploaded_voiceover_paths=a.voiceover_audio)
+
+    target_secs = a.target_hours * 3600.0 if a.target_hours is not None else a.target_duration
+
+    build_project(
+        video_path=a.video,
+        script_path=a.script,
+        edit_plan_path=a.plan,
+        voice_id=a.voice_id,
+        tts_model_id=a.model_id,
+        elevenlabs_key=a.elevenlabs_key or "",
+        out_path=a.out,
+        cache_dir=a.cache_dir,
+        logo_path=a.logo,
+        logo_position=a.logo_position,
+        logo_x_offset=a.logo_x,
+        logo_y_offset=a.logo_y,
+        bgm_path=a.bgm,
+        bgm_volume=a.bgm_volume,
+        bgm_loop=not a.no_bgm_loop,
+        voice_volume=a.voice_volume,
+        narration_speed=a.narration_speed,
+        render_preset=a.render_preset,
+        voiceover_mode=a.voiceover_mode,
+        uploaded_voiceover_paths=a.voiceover_audio,
+        render_mode=a.render_mode,
+        intro_video_paths=a.intro,
+        target_movie_duration_seconds=target_secs,
+        logo_width=a.logo_width,
+    )
+
