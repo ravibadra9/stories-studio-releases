@@ -1,8 +1,16 @@
 {
-  "patch_version": "1.0.3.1788807153",
-  "timestamp": "2026-09-08T00:22:33Z",
-  "notes": "Fixed CapCut ASS subtitles generator signature + Master Queue auto-start & extended live progress metrics + Persistent TTS audio cache reuse",
+  "patch_version": "1.0.4.1788807593",
+  "timestamp": "2026-09-08T00:29:53Z",
+  "notes": "Restored complete 19-tab rich desktop production suite in main.py & stories_app.py + CapCut subtitles fix + Queue auto-start & live progress",
   "files": [
+    {
+      "path": "main.py",
+      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/main.py"
+    },
+    {
+      "path": "stories_app.py",
+      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/stories_app.py"
+    },
     {
       "path": "story_image_engine.py",
       "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/story_image_engine.py"
@@ -16,14 +24,18 @@
       "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/master_queue.py"
     },
     {
+      "path": "boot_screen.py",
+      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/boot_screen.py"
+    },
+    {
       "path": "tabs/story_image_video_tab.py",
       "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/tabs/story_image_video_tab.py"
     }
   ],
   "broadcast": {
-    "id": "patch_1.0.3.1788807153",
-    "title": "\u26a1 Hot-Patch Applied",
-    "message": "CapCut ASS subtitles fix + Master Queue auto-start & live progress + TTS Cache reuse active",
+    "id": "patch_1.0.4.1788807593",
+    "title": "\u26a1 Full Desktop Studio Active",
+    "message": "All 19 modular tabs fully loaded with live engines, queue auto-start & CapCut subtitles",
     "type": "success"
   }
 }
