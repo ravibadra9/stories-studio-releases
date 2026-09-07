@@ -1,45 +1,7 @@
 {
-  "patch_version": "1.0.4.1788811065",
-  "timestamp": "2026-09-07T19:57:45Z",
-  "notes": "Tab auto-clear on queue addition + Queue expanded render inspector & sequential auto-start + Rain Drop & Blood Drop effects + Plugin loader hot-patch precedence",
-  "files": [
-    {
-      "path": "plugin_loader.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/plugin_loader.py"
-    },
-    {
-      "path": "ota_patcher.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/ota_patcher.py"
-    },
-    {
-      "path": "master_queue.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/master_queue.py"
-    },
-    {
-      "path": "tabs/story_image_video_tab.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/tabs/story_image_video_tab.py"
-    },
-    {
-      "path": "Master_Tool.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/Master_Tool.py"
-    },
-    {
-      "path": "tabs/05_rhymes.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/tabs/05_rhymes.py"
-    },
-    {
-      "path": "stories_engine.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/stories_engine.py"
-    },
-    {
-      "path": "auth_manager.py",
-      "url": "https://raw.githubusercontent.com/ravibadra9/stories-studio-releases/main/patches/auth_manager.py"
-    }
-  ],
-  "broadcast": {
-    "id": "patch_1.0.4.1788811065",
-    "title": "\u26a1 Live OTA Hot-Patch v1.0.4.1788811065",
-    "message": "Queue expand window, tab auto-clean, Rain/Blood drop effects active!",
-    "type": "success"
-  }
+  "patch_version": "1.0.0",
+  "timestamp": "2026-09-08T02:30:00Z",
+  "notes": "v1.0.0 Master Production Suite (19 Tabs + Modern Sidebar)",
+  "files": [],
+  "broadcast": null
 }
