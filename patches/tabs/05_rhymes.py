@@ -1390,6 +1390,341 @@ def image_to_whiteboard_video(image_path, total_duration, output_path,
     return None
 
 
+def image_to_raindrop_reveal_video(image_path, total_duration, output_path,
+                                   freeze_tail=2.5, fps=30, out_w=1920, out_h=1080):
+    """
+    Image → Raindrop splash & expanding water ripple reveal animation.
+    Rain droplets fall and create expanding ripples that uncover the image.
+    """
+    if not HAS_CV2:
+        return None
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            try:
+                pil = Image.open(image_path).convert("RGB")
+                img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+            except Exception:
+                return None
+
+        out_w -= out_w % 2; out_h -= out_h % 2
+        canvas = _wb_compose_canvas(img, out_w, out_h)
+        H, W = canvas.shape[:2]
+
+        total_frames = max(2, int(round(total_duration * fps)))
+        freeze = max(0.0, min(float(freeze_tail), total_duration * 0.4))
+        freeze_frames = int(round(freeze * fps))
+        draw_frames = max(1, total_frames - freeze_frames)
+
+        import random
+        rng = random.Random(42)
+        num_drops = int(max(40, (W * H) // 25000))
+        drops = []
+        for _ in range(num_drops):
+            st_f = rng.randint(0, max(0, int(draw_frames * 0.75)))
+            cx = rng.randint(0, W)
+            cy = rng.randint(0, H)
+            max_r = rng.randint(int(min(W, H) * 0.25), int(min(W, H) * 0.65))
+            growth_rate = rng.uniform(3.5, 9.0)
+            drops.append({"st": st_f, "cx": cx, "cy": cy, "max_r": max_r, "rate": growth_rate})
+
+        cmd = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+               "-s", f"{W}x{H}", "-r", str(fps), "-i", "-"]
+        try:
+            cmd += GPU.enc_args("veryfast")
+        except Exception:
+            cmd += ["-c:v", "libx264", "-preset", "veryfast"]
+        cmd += ["-pix_fmt", "yuv420p", "-an", "-loglevel", "error", output_path]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+
+        dark_canvas = (canvas.astype(np.float32) * 0.05).astype(np.uint8)
+
+        for f in range(draw_frames):
+            prog = f / float(draw_frames)
+            mask = np.zeros((H, W), dtype=np.uint8)
+            for d in drops:
+                if f >= d["st"]:
+                    cur_r = int((f - d["st"]) * d["rate"])
+                    cur_r = min(cur_r, d["max_r"])
+                    if cur_r > 0:
+                        cv2.circle(mask, (d["cx"], d["cy"]), cur_r, 255, -1)
+            
+            if f > 0:
+                mask = cv2.GaussianBlur(mask, (31, 31), 0)
+                if prog > 0.6:
+                    boost = int((prog - 0.6) / 0.4 * 255)
+                    mask = np.clip(mask.astype(np.int16) + boost, 0, 255).astype(np.uint8)
+
+            alpha = (mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
+            frame = (canvas.astype(np.float32) * alpha + dark_canvas.astype(np.float32) * (1.0 - alpha)).astype(np.uint8)
+
+            for d in drops:
+                if f >= d["st"] and (f - d["st"]) < 18:
+                    age = f - d["st"]
+                    ring_r = int(age * d["rate"])
+                    ring_alpha = max(0.0, 1.0 - (age / 18.0))
+                    if ring_r > 2:
+                        overlay = frame.copy()
+                        cv2.circle(overlay, (d["cx"], d["cy"]), ring_r, (255, 240, 200), 2, cv2.LINE_AA)
+                        cv2.circle(overlay, (d["cx"], d["cy"]), max(1, ring_r - 4), (200, 220, 255), 1, cv2.LINE_AA)
+                        frame = cv2.addWeighted(overlay, ring_alpha * 0.7, frame, 1.0 - ring_alpha * 0.7, 0)
+
+            proc.stdin.write(frame.tobytes())
+
+        for _ in range(total_frames - draw_frames):
+            proc.stdin.write(canvas.tobytes())
+
+        proc.stdin.close(); proc.wait()
+        if os.path.exists(output_path) and get_duration(output_path) > 0.1:
+            return output_path
+    except Exception as e:
+        print(f"image_to_raindrop_reveal_video error: {e}")
+    return None
+
+
+def image_to_blooddrop_reveal_video(image_path, total_duration, output_path,
+                                    freeze_tail=2.5, fps=30, out_w=1920, out_h=1080):
+    """
+    Image → Visceral dripping blood & dark ink reveal animation.
+    Streams and splatters of crimson flow across the frame to unveil the artwork.
+    """
+    if not HAS_CV2:
+        return None
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            try:
+                pil = Image.open(image_path).convert("RGB")
+                img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+            except Exception:
+                return None
+
+        out_w -= out_w % 2; out_h -= out_h % 2
+        canvas = _wb_compose_canvas(img, out_w, out_h)
+        H, W = canvas.shape[:2]
+
+        total_frames = max(2, int(round(total_duration * fps)))
+        freeze = max(0.0, min(float(freeze_tail), total_duration * 0.4))
+        freeze_frames = int(round(freeze * fps))
+        draw_frames = max(1, total_frames - freeze_frames)
+
+        import random
+        rng = random.Random(101)
+        num_drips = int(max(25, W // 45))
+        drips = []
+        for i in range(num_drips):
+            sx = int(i * (W / float(num_drips))) + rng.randint(-15, 15)
+            st_f = rng.randint(0, max(0, int(draw_frames * 0.4)))
+            speed = rng.uniform(float(H) / (draw_frames * 0.65), float(H) / (draw_frames * 0.35))
+            thickness = rng.randint(18, 55)
+            drips.append({"sx": sx, "st": st_f, "speed": speed, "th": thickness})
+
+        cmd = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+               "-s", f"{W}x{H}", "-r", str(fps), "-i", "-"]
+        try:
+            cmd += GPU.enc_args("veryfast")
+        except Exception:
+            cmd += ["-c:v", "libx264", "-preset", "veryfast"]
+        cmd += ["-pix_fmt", "yuv420p", "-an", "-loglevel", "error", output_path]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+
+        dark_bg = np.zeros_like(canvas)
+
+        for f in range(draw_frames):
+            prog = f / float(draw_frames)
+            mask = np.zeros((H, W), dtype=np.uint8)
+            
+            for d in drips:
+                if f >= d["st"]:
+                    cur_len = int((f - d["st"]) * d["speed"])
+                    cur_len = min(H + 50, cur_len)
+                    x = d["sx"]
+                    w_r = int(d["th"] * (1.0 + 0.8 * (cur_len / float(H))))
+                    cv2.line(mask, (x, 0), (x, cur_len), 255, w_r)
+                    cv2.circle(mask, (x, min(H - 1, cur_len)), int(w_r * 1.3), 255, -1)
+            
+            if prog > 0.3:
+                k_sz = max(3, int((prog - 0.3) / 0.7 * 80))
+                if k_sz % 2 == 0: k_sz += 1
+                kernel = cv2.getStructuringElement(cv2.MORPH_ELLIPSE, (k_sz, k_sz))
+                mask = cv2.dilate(mask, kernel)
+
+            mask = cv2.GaussianBlur(mask, (25, 25), 0)
+            if prog > 0.75:
+                boost = int((prog - 0.75) / 0.25 * 255)
+                mask = np.clip(mask.astype(np.int16) + boost, 0, 255).astype(np.uint8)
+
+            alpha = (mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
+            frame = (canvas.astype(np.float32) * alpha + dark_bg.astype(np.float32) * (1.0 - alpha)).astype(np.uint8)
+
+            edge = cv2.Canny(mask, 50, 180)
+            if np.any(edge > 0):
+                edge_dil = cv2.dilate(edge, np.ones((7, 7), np.uint8))
+                edge_alpha = (edge_dil.astype(np.float32) / 255.0)[:, :, np.newaxis] * 0.75 * (1.0 - prog)
+                blood_color = np.array([20, 10, 180], dtype=np.uint8)
+                frame = (frame.astype(np.float32) * (1.0 - edge_alpha) + blood_color * edge_alpha).astype(np.uint8)
+
+            proc.stdin.write(frame.tobytes())
+
+        for _ in range(total_frames - draw_frames):
+            proc.stdin.write(canvas.tobytes())
+
+        proc.stdin.close(); proc.wait()
+        if os.path.exists(output_path) and get_duration(output_path) > 0.1:
+            return output_path
+    except Exception as e:
+        print(f"image_to_blooddrop_reveal_video error: {e}")
+    return None
+
+
+def image_to_paper_burn_reveal_video(image_path, total_duration, output_path,
+                                     freeze_tail=2.5, fps=30, out_w=1920, out_h=1080):
+    """
+    Image → Fire Paper Burn Reveal animation.
+    Burning fiery embers incinerate a charred parchment overlay outward to unveil the image.
+    """
+    if not HAS_CV2:
+        return None
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            try:
+                pil = Image.open(image_path).convert("RGB")
+                img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+            except Exception:
+                return None
+
+        out_w -= out_w % 2; out_h -= out_h % 2
+        canvas = _wb_compose_canvas(img, out_w, out_h)
+        H, W = canvas.shape[:2]
+
+        total_frames = max(2, int(round(total_duration * fps)))
+        freeze = max(0.0, min(float(freeze_tail), total_duration * 0.4))
+        freeze_frames = int(round(freeze * fps))
+        draw_frames = max(1, total_frames - freeze_frames)
+
+        paper_bg = np.full_like(canvas, (210, 230, 245), dtype=np.uint8)
+        noise = np.random.randint(-15, 15, (H, W, 3)).astype(np.int16)
+        paper_bg = np.clip(paper_bg.astype(np.int16) + noise, 0, 255).astype(np.uint8)
+
+        cmd = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+               "-s", f"{W}x{H}", "-r", str(fps), "-i", "-"]
+        try:
+            cmd += GPU.enc_args("veryfast")
+        except Exception:
+            cmd += ["-c:v", "libx264", "-preset", "veryfast"]
+        cmd += ["-pix_fmt", "yuv420p", "-an", "-loglevel", "error", output_path]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+
+        max_radius = int(np.hypot(W, H) * 0.65)
+        cx, cy = W // 2, H // 2
+
+        for f in range(draw_frames):
+            prog = f / float(draw_frames)
+            cur_r = int(prog * max_radius)
+
+            mask = np.zeros((H, W), dtype=np.uint8)
+            if cur_r > 0:
+                cv2.circle(mask, (cx, cy), cur_r, 255, -1)
+                noise_map = np.random.randint(0, max(5, int(cur_r * 0.15) + 1), (H, W), dtype=np.uint8)
+                mask = np.clip(mask.astype(np.int16) + (noise_map if cur_r > 20 else 0), 0, 255).astype(np.uint8)
+                mask = cv2.GaussianBlur(mask, (15, 15), 0)
+
+            alpha = (mask.astype(np.float32) / 255.0)[:, :, np.newaxis]
+            frame = (canvas.astype(np.float32) * alpha + paper_bg.astype(np.float32) * (1.0 - alpha)).astype(np.uint8)
+
+            if 0.02 < prog < 0.98 and cur_r > 10:
+                edge = cv2.Canny(mask, 40, 160)
+                if np.any(edge > 0):
+                    char = cv2.dilate(edge, np.ones((11, 11), np.uint8))
+                    fire = cv2.dilate(edge, np.ones((5, 5), np.uint8))
+                    char_a = (char.astype(np.float32) / 255.0)[:, :, np.newaxis] * 0.8
+                    fire_a = (fire.astype(np.float32) / 255.0)[:, :, np.newaxis] * 0.9
+                    frame = (frame.astype(np.float32) * (1.0 - char_a) + np.array([20, 25, 30]) * char_a).astype(np.uint8)
+                    frame = (frame.astype(np.float32) * (1.0 - fire_a) + np.array([0, 165, 255]) * fire_a).astype(np.uint8)
+
+            proc.stdin.write(frame.tobytes())
+
+        for _ in range(total_frames - draw_frames):
+            proc.stdin.write(canvas.tobytes())
+
+        proc.stdin.close(); proc.wait()
+        if os.path.exists(output_path) and get_duration(output_path) > 0.1:
+            return output_path
+    except Exception as e:
+        print(f"image_to_paper_burn_reveal_video error: {e}")
+    return None
+
+
+def image_to_sparkle_reveal_video(image_path, total_duration, output_path,
+                                  freeze_tail=2.5, fps=30, out_w=1920, out_h=1080):
+    """
+    Image → Sparkle & Shimmer particle reveal animation.
+    """
+    if not HAS_CV2:
+        return None
+    try:
+        img = cv2.imread(image_path)
+        if img is None:
+            try:
+                pil = Image.open(image_path).convert("RGB")
+                img = cv2.cvtColor(np.array(pil), cv2.COLOR_RGB2BGR)
+            except Exception:
+                return None
+
+        out_w -= out_w % 2; out_h -= out_h % 2
+        canvas = _wb_compose_canvas(img, out_w, out_h)
+        H, W = canvas.shape[:2]
+
+        total_frames = max(2, int(round(total_duration * fps)))
+        freeze = max(0.0, min(float(freeze_tail), total_duration * 0.4))
+        freeze_frames = int(round(freeze * fps))
+        draw_frames = max(1, total_frames - freeze_frames)
+
+        cmd = ["ffmpeg", "-y", "-f", "rawvideo", "-pix_fmt", "bgr24",
+               "-s", f"{W}x{H}", "-r", str(fps), "-i", "-"]
+        try:
+            cmd += GPU.enc_args("veryfast")
+        except Exception:
+            cmd += ["-c:v", "libx264", "-preset", "veryfast"]
+        cmd += ["-pix_fmt", "yuv420p", "-an", "-loglevel", "error", output_path]
+        proc = subprocess.Popen(cmd, stdin=subprocess.PIPE)
+
+        for f in range(draw_frames):
+            prog = f / float(draw_frames)
+            diag = np.linspace(0, 1, W, dtype=np.float32)[np.newaxis, :]
+            vert = np.linspace(0, 0.3, H, dtype=np.float32)[:, np.newaxis]
+            grid = diag + vert
+            mask = np.clip((prog * 1.4 - grid) * 3.5, 0.0, 1.0)
+            
+            alpha = mask[:, :, np.newaxis]
+            frame = (canvas.astype(np.float32) * alpha).astype(np.uint8)
+
+            if 0.05 < prog < 0.95:
+                edge_mask = np.where((mask > 0.1) & (mask < 0.9), 255, 0).astype(np.uint8)
+                ys, xs = np.where(edge_mask > 0)
+                if len(xs) > 0:
+                    sample_size = min(30, len(xs))
+                    indices = np.random.choice(len(xs), sample_size, replace=False)
+                    for idx in indices:
+                        px, py = xs[idx], ys[idx]
+                        sz = np.random.randint(2, 6)
+                        cv2.drawMarker(frame, (px, py), (255, 255, 255), cv2.MARKER_STAR, sz * 2, 1, cv2.LINE_AA)
+                        cv2.circle(frame, (px, py), sz, (180, 240, 255), -1, cv2.LINE_AA)
+
+            proc.stdin.write(frame.tobytes())
+
+        for _ in range(total_frames - draw_frames):
+            proc.stdin.write(canvas.tobytes())
+
+        proc.stdin.close(); proc.wait()
+        if os.path.exists(output_path) and get_duration(output_path) > 0.1:
+            return output_path
+    except Exception as e:
+        print(f"image_to_sparkle_reveal_video error: {e}")
+    return None
+
+
 def image_to_video_with_zoom(image_path, duration, output_path, zoom_speed=0.0015, out_w=1920, out_h=1080):
     try:
         fps=30; total_frames=max(2,int(duration*fps)); max_zoom=min(1.0+(zoom_speed*total_frames),3.0)
@@ -6028,17 +6363,30 @@ class AdvanceEditorFrame(ctk.CTkFrame):
                     except Exception:
                         freeze_tail = 2.5
                     hand = getattr(self, "_wb_hand", "") or None
-                    ts(f"Whiteboard draw: {os.path.basename(mp)} (freeze {freeze_tail:.1f}s)")
-                    st("[3/5] Whiteboard draw...", C["orange"])
+                    effect_choice = getattr(self, "_reveal_effect_var", None)
+                    effect_name = effect_choice.get() if effect_choice else (self.settings.get("reveal_effect") or "✍️ Whiteboard Hand Sketch")
+                    
+                    ts(f"Reveal effect: {effect_name} on {os.path.basename(mp)} (freeze {freeze_tail:.1f}s)")
+                    st(f"[3/5] {effect_name}...", C["orange"])
                     wb_vid = os.path.join(TEMP_DIR, f"adv_wb_{num}.mp4")
-                    res = image_to_whiteboard_video(
-                        mp, ta, wb_vid, freeze_tail=freeze_tail,
-                        out_w=1920, out_h=1080, hand_path=hand)
+                    
+                    res = None
+                    if "Rain" in effect_name:
+                        res = image_to_raindrop_reveal_video(mp, ta, wb_vid, freeze_tail=freeze_tail, out_w=1920, out_h=1080)
+                    elif "Blood" in effect_name:
+                        res = image_to_blooddrop_reveal_video(mp, ta, wb_vid, freeze_tail=freeze_tail, out_w=1920, out_h=1080)
+                    elif "Fire" in effect_name or "Paper" in effect_name:
+                        res = image_to_paper_burn_reveal_video(mp, ta, wb_vid, freeze_tail=freeze_tail, out_w=1920, out_h=1080)
+                    elif "Sparkle" in effect_name:
+                        res = image_to_sparkle_reveal_video(mp, ta, wb_vid, freeze_tail=freeze_tail, out_w=1920, out_h=1080)
+                    else: # Default Whiteboard Hand Sketch
+                        res = image_to_whiteboard_video(mp, ta, wb_vid, freeze_tail=freeze_tail, out_w=1920, out_h=1080, hand_path=hand)
+                    
                     if res and os.path.exists(res) and get_duration(res) > 0.1:
                         vp = res
-                        ts("Whiteboard animation created")
+                        ts(f"Reveal animation ({effect_name}) created successfully")
                     else:
-                        ts("Whiteboard failed - falling back to plain image video")
+                        ts("Reveal effect failed - falling back to plain image video")
 
                 if vp is None:
                     # Image: convert to video with audio duration
@@ -6681,8 +7029,8 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
             pass
 
     def _add_whiteboard_card(self):
-        """Proper Whiteboard Animation panel in the Video Master sidebar.
-        Enable toggle + freeze setting + optional hand-image picker."""
+        """Animation & Reveal Effects panel in the Video Master sidebar.
+        Supports: Whiteboard Hand Sketch, Rain Drop Reveal, Blood Drop Reveal, Fire Paper Burn, Sparkle."""
         sb = getattr(self, "_sb_ref", None)
         if sb is None:
             return
@@ -6690,6 +7038,7 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
             self._wb_on = ctk.BooleanVar(value=bool(self.settings.get("wb_on")))
             self._wb_freeze_var = ctk.DoubleVar(value=float(self.settings.get("wb_freeze") or 2.5))
             self._wb_hand = self.settings.get("wb_hand") or ""
+            self._reveal_effect_var = ctk.StringVar(value=self.settings.get("reveal_effect") or "✍️ Whiteboard Hand Sketch")
 
             card = ctk.CTkFrame(sb, fg_color=C["card"], border_color=C["purple"],
                                 border_width=2, corner_radius=8)
@@ -6698,26 +7047,47 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
 
             head = ctk.CTkFrame(card, fg_color="transparent")
             head.pack(fill="x", padx=8, pady=(6, 2))
-            ctk.CTkLabel(head, text="\u2588  \u270d\ufe0f WHITEBOARD ANIMATION",
-                         text_color=C["purple"], font=("Segoe UI", 13, "bold")).pack(side="left")
+            ctk.CTkLabel(head, text="✨ REVEAL & ANIMATION",
+                         text_color=C["purple"], font=("Segoe UI", 12, "bold")).pack(side="left")
             state = "normal" if HAS_CV2 else "disabled"
             ctk.CTkCheckBox(head, text="Enable", variable=self._wb_on, state=state,
                             text_color=C["green"], fg_color=C["green"],
                             font=("Segoe UI", 11, "bold"), width=20,
                             command=self._wb_toggle).pack(side="right")
 
-            ctk.CTkLabel(card,
-                         text="Each image is hand-sketched left\u2192right. Drawing finishes a few\n"
-                              "seconds before the voiceover ends, then the frame freezes.",
-                         text_color=C["dim"], font=("Segoe UI", 9), justify="left"
-                         ).pack(anchor="w", padx=10, pady=(0, 4))
+            # Reveal Style Selector Dropdown
+            sel_fr = ctk.CTkFrame(card, fg_color="transparent")
+            sel_fr.pack(fill="x", padx=8, pady=(4, 2))
+            ctk.CTkLabel(sel_fr, text="Effect:", text_color=C["text"], font=("Segoe UI", 10, "bold")).pack(side="left")
+            
+            effect_options = [
+                "✍️ Whiteboard Hand Sketch",
+                "🌧️ Rain Drop Reveal",
+                "🩸 Blood Drop Reveal",
+                "🔥 Fire Paper Burn",
+                "✨ Sparkle / Shimmer Reveal"
+            ]
+            self._effect_menu = ctk.CTkOptionMenu(
+                sel_fr, values=effect_options, variable=self._reveal_effect_var,
+                width=175, height=26, font=("Segoe UI", 10),
+                fg_color=C["btn"], button_color=C["purple"], text_color=C["text"],
+                command=self._on_effect_style_change
+            )
+            self._effect_menu.pack(side="right")
+
+            # Dynamic description label
+            self._wb_desc_lbl = ctk.CTkLabel(
+                card, text="", text_color=C["dim"], font=("Segoe UI", 8),
+                justify="left", wraplength=260
+            )
+            self._wb_desc_lbl.pack(anchor="w", padx=10, pady=(2, 4))
 
             if not HAS_CV2:
-                ctk.CTkLabel(card, text="\u26a0 Install 'opencv-python' + 'numpy' to enable.",
+                ctk.CTkLabel(card, text="⚠️ Install 'opencv-python' + 'numpy' to enable.",
                              text_color=C["red"], font=("Segoe UI", 9)
                              ).pack(anchor="w", padx=10, pady=(0, 6))
 
-            # Freeze-tail setting
+            # Freeze-tail setting (Applies to all reveal animations)
             fr = ctk.CTkFrame(card, fg_color="transparent"); fr.pack(fill="x", padx=10, pady=2)
             ctk.CTkLabel(fr, text="Freeze last frame (sec before audio ends):",
                          text_color=C["text"], font=("Segoe UI", 10)).pack(side="left")
@@ -6727,34 +7097,76 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
             fe.pack(side="right")
             fe.bind("<FocusOut>", lambda e: self._wb_save_settings())
 
-            # Optional hand image
-            hr = ctk.CTkFrame(card, fg_color="transparent"); hr.pack(fill="x", padx=10, pady=(6, 2))
+            # Optional hand image frame (Only for Whiteboard Hand Sketch)
+            self._hand_frame = ctk.CTkFrame(card, fg_color="transparent")
+            self._hand_frame.pack(fill="x", padx=10, pady=(4, 2))
+            
+            hr = ctk.CTkFrame(self._hand_frame, fg_color="transparent"); hr.pack(fill="x")
             ctk.CTkLabel(hr, text="Hand image (optional):", text_color=C["text"],
                          font=("Segoe UI", 10)).pack(side="left")
-            ctk.CTkButton(hr, text="\u2715", width=28, height=26, fg_color=C["btn"],
+            ctk.CTkButton(hr, text="✕", width=28, height=26, fg_color=C["btn"],
                           hover_color=C["red"], text_color=C["dim"], font=("Segoe UI", 11),
                           command=self._wb_clear_hand).pack(side="right", padx=(4, 0))
-            ctk.CTkButton(hr, text="\U0001f4ce Choose Hand", width=120, height=26,
+            ctk.CTkButton(hr, text="📎 Choose Hand", width=110, height=26,
                           fg_color=C["btn"], hover_color=C["btn_hov"], text_color=C["text"],
                           font=("Segoe UI", 10), command=self._wb_upload_hand).pack(side="right")
 
-            self._wb_hand_lbl = ctk.CTkLabel(card, text="", text_color=C["green"],
+            self._wb_hand_lbl = ctk.CTkLabel(self._hand_frame, text="", text_color=C["green"],
                                              font=("Segoe UI", 9), anchor="w", justify="left")
-            self._wb_hand_lbl.pack(fill="x", padx=12, pady=(0, 2))
-            ctk.CTkLabel(card,
-                         text="Transparent-background PNG; pen tip at the top-left.\n"
-                              "Leave empty to use the built-in hand.",
+            self._wb_hand_lbl.pack(fill="x", padx=2, pady=(2, 0))
+            self._wb_hand_tip_lbl = ctk.CTkLabel(self._hand_frame,
+                         text="Transparent PNG (pen tip top-left). Default built-in hand.",
                          text_color=C["dim"], font=("Segoe UI", 8), justify="left"
-                         ).pack(anchor="w", padx=12, pady=(0, 8))
+                         )
+            self._wb_hand_tip_lbl.pack(anchor="w", padx=2, pady=(0, 4))
+            
             self._wb_refresh_hand_lbl()
+            self._update_effect_ui_mode()
         except Exception as e:
             print(f"[WARN] whiteboard card: {e}")
+
+    def _on_effect_style_change(self, val=None):
+        self._update_effect_ui_mode()
+        self._wb_save_settings()
+        self._wb_toggle()
+
+    def _update_effect_ui_mode(self):
+        try:
+            eff = self._reveal_effect_var.get() if hasattr(self, "_reveal_effect_var") else "✍️ Whiteboard Hand Sketch"
+            if "Whiteboard" in eff:
+                desc = "Hand-sketches linework left→right with realistic drawing strokes, then freezes."
+                if hasattr(self, "_hand_frame"):
+                    self._hand_frame.pack(fill="x", padx=10, pady=(4, 2))
+            elif "Rain" in eff:
+                desc = "Cascading water droplets & expanding ripple rings splash open to reveal the artwork."
+                if hasattr(self, "_hand_frame"):
+                    self._hand_frame.pack_forget()
+            elif "Blood" in eff:
+                desc = "Visceral dripping blood & crimson ink streams flow downward to reveal the frame."
+                if hasattr(self, "_hand_frame"):
+                    self._hand_frame.pack_forget()
+            elif "Fire" in eff or "Paper" in eff:
+                desc = "Fiery orange embers incinerate charred vintage parchment outward to uncover the scene."
+                if hasattr(self, "_hand_frame"):
+                    self._hand_frame.pack_forget()
+            elif "Sparkle" in eff:
+                desc = "Starry glitter particles & celestial shimmer waves dissolve across the image."
+                if hasattr(self, "_hand_frame"):
+                    self._hand_frame.pack_forget()
+            else:
+                desc = "Smooth animated reveal transition."
+                if hasattr(self, "_hand_frame"):
+                    self._hand_frame.pack_forget()
+            if hasattr(self, "_wb_desc_lbl"):
+                self._wb_desc_lbl.configure(text=desc)
+        except Exception:
+            pass
 
     def _wb_refresh_hand_lbl(self):
         try:
             h = getattr(self, "_wb_hand", "")
             if h and os.path.exists(h):
-                self._wb_hand_lbl.configure(text="\u2713 " + os.path.basename(h), text_color=C["green"])
+                self._wb_hand_lbl.configure(text="✓ " + os.path.basename(h), text_color=C["green"])
             else:
                 self._wb_hand_lbl.configure(text="(using built-in hand)", text_color=C["dim"])
         except Exception:
@@ -6775,7 +7187,7 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
         self._wb_save_settings()
 
     def _wb_toggle(self):
-        """Enable/disable whiteboard. Clears cached IMAGE-scene outputs so they
+        """Enable/disable reveal animations. Clears cached IMAGE-scene outputs so they
         re-render with (or without) the effect on the next Merge Final."""
         self._wb_save_settings()
         try:
@@ -6795,6 +7207,8 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
             self.settings.set("wb_on", bool(self._wb_on.get()))
             self.settings.set("wb_freeze", float(self._wb_freeze_var.get()))
             self.settings.set("wb_hand", getattr(self, "_wb_hand", ""))
+            if hasattr(self, "_reveal_effect_var"):
+                self.settings.set("reveal_effect", self._reveal_effect_var.get())
             _queue_settings_save(self, self.settings, delay=300, attr_name="_wb_settings_save_job")
         except Exception:
             pass
