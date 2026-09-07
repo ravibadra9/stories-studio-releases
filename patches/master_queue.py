@@ -161,6 +161,7 @@ class UniversalQueueTask:
         self.start_time: Optional[float] = None
         self.elapsed_secs: int = 0
         self.error_msg = ""
+        self.logs: List[str] = [f"[{self.created_at}] Task initialized and placed in queue."]
         self._thread: Optional[threading.Thread] = None
         self._is_cancelled = False
 
@@ -172,6 +173,7 @@ class UniversalQueueTask:
         self.progress_pct = 0.0
         self.start_time = time.time()
         self.status_msg = "Starting render pipeline..."
+        self.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Render engine started.")
 
         def _worker():
             try:
@@ -180,6 +182,10 @@ class UniversalQueueTask:
 
                 def _status_cb(msg: str):
                     self.status_msg = str(msg)
+                    stamp = datetime.now().strftime('%H:%M:%S')
+                    self.logs.append(f"[{stamp}] {msg}")
+                    if len(self.logs) > 600:
+                        self.logs.pop(0)
                     if self.start_time:
                         self.elapsed_secs = int(time.time() - self.start_time)
 
@@ -193,6 +199,7 @@ class UniversalQueueTask:
                 if self.start_time:
                     self.elapsed_secs = int(time.time() - self.start_time)
                 self.status_msg = f"✓ Render complete ({self.elapsed_secs}s)"
+                self.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] Render completed successfully in {self.elapsed_secs}s.")
 
                 # Trigger completion notification popup
                 show_video_completion_popup(
@@ -204,6 +211,7 @@ class UniversalQueueTask:
                 self.status = "Failed"
                 self.error_msg = str(e)
                 self.status_msg = f"❌ Error: {str(e)[:120]}"
+                self.logs.append(f"[{datetime.now().strftime('%H:%M:%S')}] [ERROR] {e}")
                 print(f"[QUEUE-ERROR] Task '{self.title}' failed: {e}")
             finally:
                 if on_finish_callback:
@@ -549,6 +557,16 @@ class MasterQueueFrame(ctk.CTkFrame):
             def _del(tid=t.id):
                 MASTER_QUEUE.remove_task(tid)
 
+            def _expand(task_obj=t):
+                TaskLiveInspectorDialog(self, task_obj)
+
+            expand_btn = ctk.CTkButton(
+                act_box, text="🔍 Expand", width=75, height=24,
+                fg_color="#8b5cf6", hover_color="#7c3aed", font=("Segoe UI", 10, "bold"),
+                command=_expand
+            )
+            expand_btn.pack(side="left", padx=2)
+
             play_btn = ctk.CTkButton(
                 act_box, text="▶ Play", width=65, height=24,
                 fg_color="#10b981", hover_color="#059669", font=("Segoe UI", 10, "bold"),
@@ -579,3 +597,143 @@ class MasterQueueFrame(ctk.CTkFrame):
                 "play_btn": play_btn,
                 "folder_btn": folder_btn
             }
+
+
+# ── Expanded Live Task Inspector Window ──────────────────────────────────────
+class TaskLiveInspectorDialog(ctk.CTkToplevel):
+    def __init__(self, parent, task: UniversalQueueTask):
+        super().__init__(parent)
+        self.task = task
+        self.title(f"🔍 Render Inspector — {task.title}")
+        self.geometry("720x520")
+        self.minsize(620, 420)
+        self.configure(fg_color="#080c14")
+        self.attributes("-topmost", True)
+
+        card = ctk.CTkFrame(self, fg_color="#0f172a", corner_radius=12, border_width=1, border_color="#1e293b")
+        card.pack(fill="both", expand=True, padx=12, pady=12)
+
+        # Header Info Bar
+        top_bar = ctk.CTkFrame(card, fg_color="#082f49", corner_radius=8)
+        top_bar.pack(fill="x", padx=10, pady=(10, 6))
+
+        ctk.CTkLabel(
+            top_bar, text=f"🎬 {task.tool_name}",
+            font=("Segoe UI", 11, "bold"), text_color="#38bdf8"
+        ).pack(side="left", padx=10, pady=8)
+
+        self.title_lbl = ctk.CTkLabel(
+            top_bar, text=f"• {task.title}",
+            font=("Segoe UI", 12, "bold"), text_color="#f8fafc"
+        )
+        self.title_lbl.pack(side="left", padx=6, pady=8)
+
+        self.status_pill = ctk.CTkLabel(
+            top_bar, text=f" {task.status} ",
+            font=("Consolas", 11, "bold"), text_color="#34d399",
+            fg_color="#064e3b", corner_radius=6
+        )
+        self.status_pill.pack(side="right", padx=10, pady=8)
+
+        # Progress Section
+        prog_frame = ctk.CTkFrame(card, fg_color="transparent")
+        prog_frame.pack(fill="x", padx=10, pady=4)
+
+        self.prog_bar = ctk.CTkProgressBar(prog_frame, height=14, corner_radius=7, progress_color="#38bdf8", fg_color="#1e293b")
+        self.prog_bar.pack(side="left", fill="x", expand=True, padx=(0, 8))
+        self.prog_bar.set(task.progress_pct / 100.0)
+
+        self.pct_lbl = ctk.CTkLabel(prog_frame, text=f"{int(task.progress_pct)}%", font=("Consolas", 13, "bold"), text_color="#38bdf8")
+        self.pct_lbl.pack(side="right")
+
+        self.live_msg = ctk.CTkLabel(card, text=task.status_msg, font=("Segoe UI", 11), text_color="#94a3b8", anchor="w")
+        self.live_msg.pack(fill="x", padx=12, pady=(0, 6))
+
+        # Log Terminal Header
+        log_hdr = ctk.CTkFrame(card, fg_color="transparent")
+        log_hdr.pack(fill="x", padx=10, pady=(4, 2))
+        ctk.CTkLabel(log_hdr, text="📋 Live Pipeline Log Output:", font=("Segoe UI", 11, "bold"), text_color="#cbd5e1").pack(side="left")
+        self.timer_lbl = ctk.CTkLabel(log_hdr, text="⏱️ 0s", font=("Consolas", 10, "bold"), text_color="#fde047")
+        self.timer_lbl.pack(side="right")
+
+        # Log Terminal Box
+        self.log_box = ctk.CTkTextbox(card, font=("Consolas", 10), fg_color="#050811", text_color="#94a3b8", border_width=1, border_color="#1e293b")
+        self.log_box.pack(fill="both", expand=True, padx=10, pady=4)
+
+        # Action Buttons
+        bot_bar = ctk.CTkFrame(card, fg_color="transparent")
+        bot_bar.pack(fill="x", padx=10, pady=(6, 10))
+
+        self.play_btn = ctk.CTkButton(
+            bot_bar, text="▶ Play Video", width=110, height=32,
+            fg_color="#10b981", hover_color="#059669", font=("Segoe UI", 11, "bold"),
+            state="normal" if task.status == "Completed" else "disabled",
+            command=self._play_video
+        )
+        self.play_btn.pack(side="left", padx=4)
+
+        self.folder_btn = ctk.CTkButton(
+            bot_bar, text="📂 Open Folder", width=120, height=32,
+            fg_color="#3b82f6", hover_color="#2563eb", font=("Segoe UI", 11),
+            state="normal" if task.status == "Completed" else "disabled",
+            command=self._open_folder
+        )
+        self.folder_btn.pack(side="left", padx=4)
+
+        ctk.CTkButton(
+            bot_bar, text="Close", width=80, height=32,
+            fg_color="#1e293b", hover_color="#334155", font=("Segoe UI", 11),
+            command=self.destroy
+        ).pack(side="right", padx=4)
+
+        self._last_log_len = 0
+        self._update_loop()
+
+    def _update_loop(self):
+        try:
+            if not self.winfo_exists():
+                return
+            t = self.task
+            self.prog_bar.set(t.progress_pct / 100.0)
+            self.pct_lbl.configure(text=f"{int(t.progress_pct)}%")
+            self.live_msg.configure(text=t.status_msg)
+
+            if t.start_time and t.status == "Rendering":
+                el = int(time.time() - t.start_time)
+                self.timer_lbl.configure(text=f"⏱️ Running: {el}s")
+                self.status_pill.configure(text=" Rendering ", fg_color="#082f49", text_color="#38bdf8")
+            elif t.status == "Completed":
+                self.timer_lbl.configure(text=f"✓ Done in {t.elapsed_secs}s", text_color="#10b981")
+                self.status_pill.configure(text=" Completed ", fg_color="#064e3b", text_color="#34d399")
+                self.play_btn.configure(state="normal")
+                self.folder_btn.configure(state="normal")
+            elif t.status == "Failed":
+                self.timer_lbl.configure(text="❌ Failed", text_color="#ef4444")
+                self.status_pill.configure(text=" Failed ", fg_color="#7f1d1d", text_color="#f87171")
+
+            # Update logs
+            if len(t.logs) != self._last_log_len:
+                new_logs = t.logs[self._last_log_len:]
+                self.log_box.insert("end", "\n".join(new_logs) + "\n")
+                self.log_box.see("end")
+                self._last_log_len = len(t.logs)
+
+            self.after(250, self._update_loop)
+        except Exception:
+            pass
+
+    def _play_video(self):
+        p = self.task.output_path
+        if p and os.path.exists(p):
+            try:
+                os.startfile(p)
+            except Exception:
+                pass
+
+    def _open_folder(self):
+        p = self.task.output_path
+        if p and os.path.exists(p):
+            try:
+                subprocess.Popen(f'explorer /select,"{os.path.abspath(p)}"')
+            except Exception:
+                pass
