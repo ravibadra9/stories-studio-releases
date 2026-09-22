@@ -250,8 +250,9 @@ class StoryImageVideoTab(ctk.CTkFrame):
         api_wrap.grid(row=1, column=1, columnspan=2, padx=(2, 6), pady=2, sticky="ew")
         api_wrap.grid_columnconfigure(0, weight=1)
 
-        self.api_key = ctk.CTkEntry(api_wrap, placeholder_text="Enter API Key (Optional)...", show="*", height=26, fg_color=C_BG, border_color=C_BORDER)
+        self.api_key = ctk.CTkEntry(api_wrap, placeholder_text="sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt", show="*", height=26, fg_color=C_BG, border_color=C_BORDER)
         self.api_key.grid(row=0, column=0, padx=(0, 4), sticky="ew")
+        self.api_key.insert(0, "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
 
         self.show_key_btn = ctk.CTkButton(api_wrap, text="👁", width=28, height=26, fg_color=C_CARD_HEADER, command=self._toggle_key_visibility)
         self.show_key_btn.grid(row=0, column=1, padx=(0, 4))
@@ -305,20 +306,12 @@ class StoryImageVideoTab(ctk.CTkFrame):
         self.tts_speed_label = ctk.CTkLabel(c2, text="1.00x", width=65, text_color=C_CYAN, font=ctk.CTkFont(size=10))
         self.tts_speed_label.grid(row=7, column=2, padx=6)
 
-        ctk.CTkLabel(c2, text="Audio Thread", font=ctk.CTkFont(size=11, weight="bold")).grid(row=8, column=0, padx=6, pady=2, sticky="w")
-        aud_stepper = ctk.CTkFrame(c2, fg_color="transparent")
-        aud_stepper.grid(row=8, column=1, columnspan=2, padx=(2, 6), pady=2, sticky="ew")
-        aud_stepper.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkButton(aud_stepper, text="−", width=26, height=22, font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=C_CARD_HEADER, hover_color=C_BORDER, command=self._dec_audio_thread).grid(row=0, column=0, padx=(0, 4))
-        self.parallel_tts = ctk.CTkSlider(aud_stepper, from_=1, to=16, number_of_steps=15, height=14, command=self._on_audio_thread_change)
-        self.parallel_tts.grid(row=0, column=1, sticky="ew", padx=2)
+        ctk.CTkLabel(c2, text="Parallel TTS Workers").grid(row=8, column=0, padx=6, pady=2, sticky="w")
+        self.parallel_tts = ctk.CTkSlider(c2, from_=1, to=10, number_of_steps=9, height=14, command=lambda v: self.parallel_tts_label.configure(text=f"{int(v)} workers"))
+        self.parallel_tts.grid(row=8, column=1, padx=4, pady=2, sticky="ew")
         self.parallel_tts.set(6)
-        ctk.CTkButton(aud_stepper, text="+", width=26, height=22, font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=C_CARD_HEADER, hover_color=C_BORDER, command=self._inc_audio_thread).grid(row=0, column=2, padx=(4, 6))
-        self.parallel_tts_label = ctk.CTkLabel(aud_stepper, text="6 Threads", width=68, text_color=C_CYAN, font=ctk.CTkFont(size=11, weight="bold"))
-        self.parallel_tts_label.grid(row=0, column=3, padx=(0, 2))
+        self.parallel_tts_label = ctk.CTkLabel(c2, text="6 workers", width=65, text_color=C_CYAN, font=ctk.CTkFont(size=10))
+        self.parallel_tts_label.grid(row=8, column=2, padx=6)
 
         self.api_status = ctk.CTkLabel(c2, text="AI33 Ready", font=ctk.CTkFont(size=10), text_color=C_MUTED)
         self.api_status.grid(row=9, column=1, columnspan=2, padx=4, pady=(1, 4), sticky="w")
@@ -621,39 +614,14 @@ class StoryImageVideoTab(ctk.CTkFrame):
         self.video_fps.grid(row=4, column=1, columnspan=2, padx=(2, 6), pady=3, sticky="ew")
         self.video_fps.set("30 FPS (Standard Video)")
 
-        # Editing Video Thread
-        ctk.CTkLabel(c3, text="Editing Video Thread", font=ctk.CTkFont(size=11, weight="bold")).grid(row=5, column=0, padx=6, pady=3, sticky="w")
-        vid_stepper = ctk.CTkFrame(c3, fg_color="transparent")
-        vid_stepper.grid(row=5, column=1, columnspan=2, padx=(2, 6), pady=3, sticky="ew")
-        vid_stepper.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkButton(vid_stepper, text="−", width=26, height=22, font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=C_CARD_HEADER, hover_color=C_BORDER, command=self._dec_video_thread).grid(row=0, column=0, padx=(0, 4))
-        self.parallel_video = ctk.CTkSlider(vid_stepper, from_=1, to=12, number_of_steps=11, height=14, command=self._on_video_thread_change)
-        self.parallel_video.grid(row=0, column=1, sticky="ew", padx=2)
+        ctk.CTkLabel(c3, text="Parallel Video Workers").grid(row=5, column=0, padx=6, pady=3, sticky="w")
+        self.parallel_video = ctk.CTkSlider(c3, from_=1, to=8, number_of_steps=7, height=14, command=lambda v: self.parallel_video_label.configure(text=f"{int(v)} workers"))
+        self.parallel_video.grid(row=5, column=1, padx=4, pady=(3, 6), sticky="ew")
         self.parallel_video.set(4)
-        ctk.CTkButton(vid_stepper, text="+", width=26, height=22, font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=C_CARD_HEADER, hover_color=C_BORDER, command=self._inc_video_thread).grid(row=0, column=2, padx=(4, 6))
-        self.parallel_video_label = ctk.CTkLabel(vid_stepper, text="4 Threads", width=68, text_color=C_CYAN, font=ctk.CTkFont(size=11, weight="bold"))
-        self.parallel_video_label.grid(row=0, column=3, padx=(0, 2))
+        self.parallel_video_label = ctk.CTkLabel(c3, text="4 workers", width=65, text_color=C_CYAN, font=ctk.CTkFont(size=10))
+        self.parallel_video_label.grid(row=5, column=2, padx=6)
 
-        # Audio Thread in Render Settings as well
-        ctk.CTkLabel(c3, text="Audio Thread", font=ctk.CTkFont(size=11, weight="bold")).grid(row=6, column=0, padx=6, pady=3, sticky="w")
-        aud_exp_stepper = ctk.CTkFrame(c3, fg_color="transparent")
-        aud_exp_stepper.grid(row=6, column=1, columnspan=2, padx=(2, 6), pady=3, sticky="ew")
-        aud_exp_stepper.grid_columnconfigure(1, weight=1)
-
-        ctk.CTkButton(aud_exp_stepper, text="−", width=26, height=22, font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=C_CARD_HEADER, hover_color=C_BORDER, command=self._dec_audio_thread).grid(row=0, column=0, padx=(0, 4))
-        self.export_audio_slider = ctk.CTkSlider(aud_exp_stepper, from_=1, to=16, number_of_steps=15, height=14, command=self._on_export_audio_thread_change)
-        self.export_audio_slider.grid(row=0, column=1, sticky="ew", padx=2)
-        self.export_audio_slider.set(6)
-        ctk.CTkButton(aud_exp_stepper, text="+", width=26, height=22, font=ctk.CTkFont(size=13, weight="bold"),
-                      fg_color=C_CARD_HEADER, hover_color=C_BORDER, command=self._inc_audio_thread).grid(row=0, column=2, padx=(4, 6))
-        self.export_audio_label = ctk.CTkLabel(aud_exp_stepper, text="6 Threads", width=68, text_color=C_CYAN, font=ctk.CTkFont(size=11, weight="bold"))
-        self.export_audio_label.grid(row=0, column=3, padx=(0, 2))
-
-        self.output_path_entry = self._file_row(c3, 7, "Output Video Path", self._choose_output_path, "Save path for final MP4 video")
+        self.output_path_entry = self._file_row(c3, 6, "Output Video Path", self._choose_output_path, "Save path for final MP4 video")
 
         # Export Action & Progress Tracker Card
         c8 = ctk.CTkFrame(exp_right, fg_color=C_CARD, corner_radius=8, border_width=1, border_color=C_BORDER)
@@ -739,7 +707,7 @@ class StoryImageVideoTab(ctk.CTkFrame):
         self.render_quality.set("Fast Draft (Ultra Speed)")
         self.camera_motion.set("⏹️ Static (No Motion / Crisp Image)")
         self.parallel_video.set(6)
-        self.parallel_video_label.configure(text="6 Threads")
+        self.parallel_video_label.configure(text="6 workers")
         self.log("[preset] Applied '⚡ Ultra Speed Draft (720p Static)' preset ✓")
 
     def _apply_preset_4k(self):
@@ -749,76 +717,6 @@ class StoryImageVideoTab(ctk.CTkFrame):
         self.caption_preset.set("Gold Luxury Bold")
         self.camera_motion.set("🌊 3D Parallax & Gentle Float")
         self.log("[preset] Applied '💎 4K Cinema Master' preset ✓")
-
-    # -------------------------------------------------------------------------
-    # THREAD & CONCURRENCY STEPPER HANDLERS
-    # -------------------------------------------------------------------------
-    def _dec_audio_thread(self):
-        cur = int(self.parallel_tts.get()) if hasattr(self, "parallel_tts") else 6
-        if cur > 1:
-            val = cur - 1
-            if hasattr(self, "parallel_tts"):
-                self.parallel_tts.set(val)
-            if hasattr(self, "parallel_tts_label"):
-                self.parallel_tts_label.configure(text=f"{val} Threads")
-            if hasattr(self, "export_audio_slider"):
-                self.export_audio_slider.set(val)
-            if hasattr(self, "export_audio_label"):
-                self.export_audio_label.configure(text=f"{val} Threads")
-
-    def _inc_audio_thread(self):
-        cur = int(self.parallel_tts.get()) if hasattr(self, "parallel_tts") else 6
-        if cur < 16:
-            val = cur + 1
-            if hasattr(self, "parallel_tts"):
-                self.parallel_tts.set(val)
-            if hasattr(self, "parallel_tts_label"):
-                self.parallel_tts_label.configure(text=f"{val} Threads")
-            if hasattr(self, "export_audio_slider"):
-                self.export_audio_slider.set(val)
-            if hasattr(self, "export_audio_label"):
-                self.export_audio_label.configure(text=f"{val} Threads")
-
-    def _on_audio_thread_change(self, v):
-        val = int(float(v))
-        if hasattr(self, "parallel_tts_label"):
-            self.parallel_tts_label.configure(text=f"{val} Threads")
-        if hasattr(self, "export_audio_slider"):
-            self.export_audio_slider.set(val)
-        if hasattr(self, "export_audio_label"):
-            self.export_audio_label.configure(text=f"{val} Threads")
-
-    def _on_export_audio_thread_change(self, v):
-        val = int(float(v))
-        if hasattr(self, "export_audio_label"):
-            self.export_audio_label.configure(text=f"{val} Threads")
-        if hasattr(self, "parallel_tts"):
-            self.parallel_tts.set(val)
-        if hasattr(self, "parallel_tts_label"):
-            self.parallel_tts_label.configure(text=f"{val} Threads")
-
-    def _dec_video_thread(self):
-        cur = int(self.parallel_video.get()) if hasattr(self, "parallel_video") else 4
-        if cur > 1:
-            val = cur - 1
-            if hasattr(self, "parallel_video"):
-                self.parallel_video.set(val)
-            if hasattr(self, "parallel_video_label"):
-                self.parallel_video_label.configure(text=f"{val} Threads")
-
-    def _inc_video_thread(self):
-        cur = int(self.parallel_video.get()) if hasattr(self, "parallel_video") else 4
-        if cur < 12:
-            val = cur + 1
-            if hasattr(self, "parallel_video"):
-                self.parallel_video.set(val)
-            if hasattr(self, "parallel_video_label"):
-                self.parallel_video_label.configure(text=f"{val} Threads")
-
-    def _on_video_thread_change(self, v):
-        val = int(float(v))
-        if hasattr(self, "parallel_video_label"):
-            self.parallel_video_label.configure(text=f"{val} Threads")
 
     # -------------------------------------------------------------------------
     # UI NAVIGATION & SCROLL HELPERS
@@ -950,14 +848,14 @@ class StoryImageVideoTab(ctk.CTkFrame):
     def _load_env(self):
         try:
             env_key = os.environ.get("ELEVENLABS_API_KEY", "").strip()
-            if env_key and env_key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            if env_key:
                 self.api_key.delete(0, "end")
                 self.api_key.insert(0, env_key)
 
             try:
                 import voice_cache
                 cached = voice_cache.load_api_key()
-                if cached and cached != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt" and not self.api_key.get().strip():
+                if cached and not self.api_key.get().strip():
                     self.api_key.delete(0, "end")
                     self.api_key.insert(0, cached)
             except Exception:
@@ -1106,9 +1004,7 @@ class StoryImageVideoTab(ctk.CTkFrame):
                 self.parse_script_blocks()
 
     def _fetch_voices_threaded(self):
-        key = self.api_key.get().strip()
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            key = ""
+        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
         
         # 1. Immediate instant load from cache/built-in so user never waits (0s delay)
         import voice_cache
@@ -1351,9 +1247,7 @@ class StoryImageVideoTab(ctk.CTkFrame):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
-        key = self.api_key.get().strip()
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            key = ""
+        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
@@ -2035,17 +1929,13 @@ class StoryImageVideoTab(ctk.CTkFrame):
             return
 
         key = self.api_key.get().strip()
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            key = ""
         if not key:
             try:
                 import voice_cache
                 key = voice_cache.load_api_key() or ""
-                if key and key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+                if key:
                     self.api_key.delete(0, "end")
                     self.api_key.insert(0, key)
-                else:
-                    key = ""
             except Exception:
                 key = ""
 
@@ -2164,13 +2054,13 @@ class StoryImageVideoTab(ctk.CTkFrame):
         except Exception:
             pass
 
-        # Trigger completion notification popup with chime sound
+        # Trigger completion notification popup with chime sound & queue registration
         try:
             import master_queue
-            master_queue.show_video_completion_popup(
-                parent=self,
+            master_queue.register_rendered_video(
                 video_path=out_path,
-                title="Story Image Video Created!"
+                title="Story Image Video Created!",
+                tool_name="Story Image Video"
             )
         except Exception:
             messagebox.showinfo("Video Created!", f"Story Image Video created successfully!\n\nSaved to:\n{out_path}")
@@ -2409,11 +2299,8 @@ class StoryImageVideoTab(ctk.CTkFrame):
 
     def _collect_settings(self) -> dict:
         try:
-            k = self.api_key.get().strip() if hasattr(self, "api_key") else ""
-            if k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-                k = ""
             return {
-                "api_key": k,
+                "api_key": self.api_key.get().strip() if hasattr(self, "api_key") else "",
                 "model": self.model_menu.get() if hasattr(self, "model_menu") else "",
                 "voice_id": self.voice_id.get().strip() if hasattr(self, "voice_id") else "",
                 "parallel_tts": int(self.parallel_tts.get()) if hasattr(self, "parallel_tts") else 2,
@@ -2458,9 +2345,7 @@ class StoryImageVideoTab(ctk.CTkFrame):
         if not st: return
         try:
             if "api_key" in st and st["api_key"] and hasattr(self, "api_key"):
-                k = st["api_key"]
-                if k != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-                    self.api_key.delete(0, "end"); self.api_key.insert(0, k)
+                self.api_key.delete(0, "end"); self.api_key.insert(0, st["api_key"])
             if "model" in st and st["model"] and hasattr(self, "model_menu"):
                 try: self.model_menu.set(st["model"])
                 except Exception: pass
