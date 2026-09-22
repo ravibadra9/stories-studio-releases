@@ -2695,9 +2695,7 @@ class VoiceSearchWindow(ctk.CTkToplevel):
             pp=os.path.join(TEMP_DIR,f"_voice_preview_{vid[:8]}.mp3")
             try:
                 from ai33_api import AI33Client
-                _ai33_k = (self.api_key or os.getenv("AI33_API_KEY") or "").strip()
-                if _ai33_k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": _ai33_k = ""
-                _ai33_c = AI33Client(api_key=_ai33_k)
+                _ai33_c = AI33Client(api_key=self.api_key or os.getenv("AI33_API_KEY") or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
                 _res = _ai33_c.text_to_speech_v3(text="Hello, this is a voice preview test.", voice_id=vid)
                 if isinstance(_res, (bytes, bytearray)) and len(_res) > 500:
                     with open(pp, "wb") as f: f.write(_res)
@@ -4313,11 +4311,11 @@ class AdvanceEditorFrame(ctk.CTkFrame):
 
     # ── Voice Studio & TTS Engine Methods ──
     def _fetch_voices_threaded(self):
-        key = ""
+        key = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
         try:
             if hasattr(self, "api_entry") and self.api_entry.winfo_exists():
                 val = self.api_entry.get().strip()
-                if val and val != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = val
+                if val: key = val
         except Exception:
             pass
         if hasattr(self, "api_status"):
@@ -4499,8 +4497,8 @@ class AdvanceEditorFrame(ctk.CTkFrame):
     def play_single_voice_preview(self, voice_dict: dict):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
-        key = self.api_entry.get().strip() if (hasattr(self, "api_entry") and self.api_entry.winfo_exists()) else ""
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = ""
+        purl = voice_dict.get("preview_url") or ""
+        key = self.api_entry.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
@@ -10082,6 +10080,14 @@ class RenderTask:
         if elapsed: self.elapsed = elapsed
         if ok: _render_beep()
         RENDER_QUEUE.task_finished(self)
+        if ok and self.save_path and os.path.exists(self.save_path):
+            try:
+                import master_queue
+                self.src_frame.after(300, lambda: master_queue.register_rendered_video(
+                    self.save_path, title=self.name, tool_name="Rhymes Editor"
+                ))
+            except Exception:
+                pass
 
     def stop(self):
         try:
@@ -10503,6 +10509,14 @@ class RenderWindow(ctk.CTkToplevel):
                     auth_manager.record_video_export(tool_name="Rhymes Editor")
                 except Exception:
                     pass
+                if self.save_path and os.path.exists(self.save_path):
+                    try:
+                        import master_queue
+                        self.after(200, lambda: master_queue.register_rendered_video(
+                            self.save_path, title=f"Rhymes: {os.path.basename(self.save_path)}", tool_name="Rhymes Editor"
+                        ))
+                    except Exception:
+                        pass
         except Exception:
             pass
 
