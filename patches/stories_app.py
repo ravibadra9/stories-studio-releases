@@ -285,26 +285,16 @@ def create(frame, boot_data=None):
     )
     btn_refresh.pack(side="right", padx=(4, 4))
 
-    # 👑 Super Admin Control Center button (Restricted exclusively to 8949400100)
+    # 👑 Super Admin Control Center button (Exclusively for 8949400100)
     from auth_manager import is_current_user_admin
-    user_is_super_admin = is_current_user_admin(boot_data.get("user_data"))
+    if is_current_user_admin(boot_data.get("user_data") if isinstance(boot_data, dict) else None):
+        def _open_admin():
+            try:
+                import admin_tool
+                admin_tool.launch_gui_admin()
+            except Exception as e:
+                print("[ADMIN] Launch error:", e)
 
-    def _open_admin():
-        from auth_manager import is_current_user_admin
-        if not is_current_user_admin(boot_data.get("user_data")):
-            from tkinter import messagebox
-            messagebox.showerror(
-                "Unauthorized Access",
-                "⚠️ Access Denied: Unauthorized.\n\nOnly Master Super Admin (8949400100) has permission to open the Admin Panel."
-            )
-            return
-        try:
-            import admin_tool
-            admin_tool.launch_gui_admin(header.winfo_toplevel(), user_data=boot_data.get("user_data"))
-        except Exception as e:
-            print("[ADMIN] Launch error:", e)
-
-    if user_is_super_admin:
         btn_admin = ctk.CTkButton(right_box, text="👑 Admin", width=85, height=32,
             fg_color="#4f46e5", hover_color="#4338ca",
             border_width=1, border_color="#818cf8",
@@ -314,11 +304,11 @@ def create(frame, boot_data=None):
         )
         btn_admin.pack(side="right", padx=(4, 4))
 
-    try:
-        header.winfo_toplevel().bind("<Control-Shift-Key-A>", lambda e: _open_admin())
-        header.winfo_toplevel().bind("<Control-Shift-Key-a>", lambda e: _open_admin())
-    except Exception:
-        pass
+        try:
+            header.winfo_toplevel().bind("<Control-Shift-Key-A>", lambda e: _open_admin())
+            header.winfo_toplevel().bind("<Control-Shift-Key-a>", lambda e: _open_admin())
+        except Exception:
+            pass
 
     # Theme button
     ctk.CTkButton(right_box, text="🎨 Theme", width=80, height=32,
