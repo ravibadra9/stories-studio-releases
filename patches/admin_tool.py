@@ -66,16 +66,7 @@ def gen_password(n: int = 12) -> str:
 # ══════════════════════════════════════════════════════════
 #  GUI ADMIN DASHBOARD (CustomTkinter + Dark Glassmorphic)
 # ══════════════════════════════════════════════════════════
-def launch_gui_admin(parent=None, user_data=None):
-    from auth_manager import is_current_user_admin
-    if not is_current_user_admin(user_data):
-        from tkinter import messagebox
-        messagebox.showerror(
-            "Unauthorized Access",
-            "⚠️ Access Denied: Unauthorized.\n\nOnly Master Super Admin (8949400100) has permission to open the Admin Panel."
-        )
-        return
-
+def launch_gui_admin(parent=None):
     import customtkinter as ctk
     from tkinter import messagebox, simpledialog
 
