@@ -26,7 +26,7 @@ _DEFAULT_BASE_URL = "https://api.ai33.pro"
 _SSL_CONTEXT: Optional[ssl.SSLContext] = None
 
 
-DEFAULT_AI33_KEY = ""
+DEFAULT_AI33_KEY = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 
 
 _FEMALE_VOICE_NAMES = {
@@ -181,9 +181,7 @@ def ai33_tts_generate(
         prefixed_vid = f"{provider_prefix}{bare_vid}"
         clean_vid = bare_vid
 
-    key_to_use = (api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or "").strip()
-    if key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        key_to_use = ""
+    key_to_use = api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or DEFAULT_AI33_KEY
 
     # Tier 1: AI33 v3 Endpoint
     try:
@@ -231,7 +229,7 @@ def ai33_tts_generate(
         pass
 
     # Tier 2: Direct ElevenLabs API (if custom user API key is configured)
-    if key_to_use:
+    if key_to_use and key_to_use != DEFAULT_AI33_KEY:
         try:
             bare_vid = clean_vid
             for p in ["elevenlabs_", "minimax_", "clone_", "vbee_", "fishaudio_", "edge_", "kokoro_"]:
@@ -336,16 +334,15 @@ class AI33Client:
     """Client for interacting with the AI33 Audio API."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: str = _DEFAULT_BASE_URL, timeout: int = 120):
-        cand_key = (api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or os.getenv("ELEVENLABS_API_KEY") or "").strip()
-        if cand_key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            cand_key = ""
-        self.api_key = cand_key
+        self.api_key = api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or os.getenv("ELEVENLABS_API_KEY") or DEFAULT_AI33_KEY
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
     def _headers(self, content_type: Optional[str] = None) -> Dict[str, str]:
+        if not self.api_key:
+            self.api_key = DEFAULT_AI33_KEY
         headers = {
-            "xi-api-key": self.api_key or "",
+            "xi-api-key": self.api_key,
             "User-Agent": "AI33-Python-SDK/1.0",
         }
         if content_type:
@@ -461,9 +458,7 @@ class AI33Client:
         fetched_voices: List[Dict[str, Any]] = []
         seen_ids = set()
 
-        api_key_to_use = (self.api_key or "").strip()
-        if api_key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            api_key_to_use = ""
+        api_key_to_use = self.api_key or DEFAULT_AI33_KEY
         req_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StoriesStudio/2.8",
             "xi-api-key": api_key_to_use,
@@ -526,7 +521,7 @@ class AI33Client:
                     pass
 
         # Also fetch direct ElevenLabs voices if custom user key is set
-        if api_key_to_use and not fast_mode:
+        if api_key_to_use and api_key_to_use != DEFAULT_AI33_KEY and not fast_mode:
             try:
                 el_url = "https://api.elevenlabs.io/v1/voices"
                 el_headers = {"xi-api-key": api_key_to_use, "User-Agent": "StoriesStudio/2.8"}
