@@ -53,11 +53,6 @@ from plugin_loader import discover_tabs, mount_tabs, StudioScrollableTabview
 
 
 def get_music_tabs_dir() -> Path:
-    _appdata = os.getenv("LOCALAPPDATA") or os.getenv("APPDATA") or os.path.expanduser("~")
-    hot_music_tabs = Path(_appdata) / "StoriesStudio" / "hot_patches" / "music_tabs"
-    if hot_music_tabs.is_dir() and any(hot_music_tabs.glob("*.py")):
-        return hot_music_tabs
-
     candidates = []
     if getattr(sys, "frozen", False):
         meipass = getattr(sys, "_MEIPASS", "")
