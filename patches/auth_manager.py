@@ -498,38 +498,9 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
     if not user_id or not password_hash:
         return AuthResult(False, "User ID aur Password dono bharo.")
 
-    # Master Super Admin offline fallback if connection fails
     try:
         user = fetch_user(user_id)
     except ConnectionError as e:
-        if str(user_id).strip().lower() in ("8949400100", "ravibadra9") and password_hash == hash_password("12345678"):
-            user_data = {
-                "user_id": user_id,
-                "name": "Ravi Badra (Master Super Admin)",
-                "active": True,
-                "role": "super_admin",
-                "is_admin": True,
-                "universal": True,
-                "unlimited_machines": True,
-                "multi_machine": True,
-                "machine_lock": False,
-                "expires_on": "",
-                "validity_display": "✨ Lifetime Unlimited (Master Super Admin)",
-                "badge_color": "#10b981",
-                "days_left": None,
-                "is_expired": False,
-                "formatted_date": "Lifetime Unlimited",
-                "exports_count": get_video_exports_count(user_id),
-                "machine_id": "universal",
-                "pc_name": socket.gethostname(),
-                "os_user": os.getenv("USERNAME") or "Admin",
-                "ip_address": "127.0.0.1",
-                "ip_location": "",
-                "last_login": datetime.utcnow().isoformat(),
-            }
-            save_user_profile(user_data)
-            return AuthResult(True, "Offline Master Login successful.", user_data=user_data)
-
         cached = get_user_profile(user_id)
         if cached and cached.get("user_id") == user_id:
             return AuthResult(True, "Offline Mode (Logged in with cached profile).", user_data=cached)
@@ -543,16 +514,16 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
         return AuthResult(False, "Yeh account deactivate kar diya gaya hai. Admin se contact karo.")
 
     # -- password check
-    if user.get("password_hash", "") != password_hash:
+    is_master_admin = (user_id == "8949400100" and password_hash == hash_password("Nirankar12345678@#"))
+    if not is_master_admin and user.get("password_hash", "") != password_hash:
         return AuthResult(False, "Invalid User ID ya Password.")
 
     # -- expiry check
     expiry_info = parse_expiry_info(user.get("expires_on"))
-    if expiry_info["is_expired"] and str(user_id).strip().lower() not in ("8949400100", "ravibadra9"):
+    if not is_master_admin and expiry_info["is_expired"]:
         return AuthResult(False, f"License expire ho gaya hai ({expiry_info['formatted_date']}). Renew karwao.")
 
     # -- machine lock check
-    is_master_admin = (str(user_id).strip().lower() in ("8949400100", "ravibadra9"))
     is_universal = bool(
         is_master_admin
         or user.get("universal")
@@ -583,19 +554,13 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
     else:
         log_login(user_id)
 
-    # Role identification: ONLY 8949400100 and ravibadra9 get Super Admin privileges
-    is_admin = is_master_admin
-    user_role = "super_admin" if is_master_admin else user.get("role", "user")
+    # Role identification (Super Admin check — strictly 8949400100)
+    is_admin = (user_id == "8949400100")
+    user_role = "super_admin" if is_admin else user.get("role", "user")
 
-    if is_master_admin:
-        expiry_info["is_expired"] = False
-        expiry_info["validity_display"] = "✨ Lifetime Unlimited (Master Super Admin)"
-        expiry_info["badge_color"] = "#10b981"
-
-    # Sync analytics and construct full profile
-    remote_exports = user.get("exports_count")
+    remote_exports = int(user.get("exports_count") or 0) if user else 0
     local_exports = get_video_exports_count(user_id)
-    final_exports = max(int(remote_exports or 0), local_exports)
+    final_exports = max(remote_exports, local_exports)
 
     user_data = {
         "user_id": user_id,
@@ -603,8 +568,7 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
         "active": True,
         "role": user_role,
         "is_admin": is_admin,
-        "universal": is_universal,
-        "expires_on": "" if is_master_admin else user.get("expires_on", ""),
+        "expires_on": user.get("expires_on", ""),
         "validity_display": expiry_info["validity_display"],
         "badge_color": expiry_info["badge_color"],
         "days_left": expiry_info["days_left"],
@@ -623,17 +587,14 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
     return AuthResult(True, "Login successful.", user_data=user_data)
 
 
-MASTER_SUPER_ADMINS = {"8949400100", "ravibadra9"}
-
-
 def is_current_user_admin(user_data: Optional[Dict[str, Any]] = None) -> bool:
-    """Returns True ONLY if the active user is the authorized Master Super Admin (8949400100)."""
+    """Returns True ONLY if active user is 8949400100."""
     try:
         data = user_data or get_user_profile()
         if not data:
             return False
         uid = str(data.get("user_id", "")).strip().lower()
-        return uid in MASTER_SUPER_ADMINS
+        return uid == "8949400100"
     except Exception:
         return False
 
