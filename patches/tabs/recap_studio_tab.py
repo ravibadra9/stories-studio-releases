@@ -312,8 +312,9 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         self.gen_voice_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self.gen_voice_frame, text="AI33 API Key").grid(row=0, column=0, padx=14, pady=6, sticky="w")
-        self.api_key = ctk.CTkEntry(self.gen_voice_frame, show="•", placeholder_text="Enter API Key (Optional)...")
+        self.api_key = ctk.CTkEntry(self.gen_voice_frame, show="•", placeholder_text="sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
         self.api_key.grid(row=0, column=1, padx=4, pady=6, sticky="ew")
+        self.api_key.insert(0, "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
 
         api_btn_frame = ctk.CTkFrame(self.gen_voice_frame, fg_color="transparent")
         api_btn_frame.grid(row=0, column=2, padx=(4, 14), pady=6, sticky="e")
@@ -595,8 +596,13 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         run_card.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(12, 18))
         run_card.grid_columnconfigure(0, weight=1)
 
+        btn_row = ctk.CTkFrame(run_card, fg_color="transparent")
+        btn_row.grid(row=0, column=0, padx=18, pady=(16, 8), sticky="ew")
+        btn_row.grid_columnconfigure(0, weight=3)
+        btn_row.grid_columnconfigure(1, weight=1)
+
         self.run_btn = ctk.CTkButton(
-            run_card,
+            btn_row,
             text="▶  RUN / RESUME PROJECT",
             font=ctk.CTkFont(size=18, weight="bold"),
             fg_color="#10B981",
@@ -604,7 +610,18 @@ class RecapStudioTabFrame(ctk.CTkFrame):
             height=54,
             command=self.run_project,
         )
-        self.run_btn.grid(row=0, column=0, padx=18, pady=(16, 8), sticky="ew")
+        self.run_btn.grid(row=0, column=0, padx=(0, 10), sticky="ew")
+
+        self.upload_btn = ctk.CTkButton(
+            btn_row,
+            text="📤  UPLOAD TO CHANNEL",
+            font=ctk.CTkFont(size=13, weight="bold"),
+            fg_color="#E11D48",
+            hover_color="#BE123C",
+            height=54,
+            command=self._on_upload_to_channel,
+        )
+        self.upload_btn.grid(row=0, column=1, sticky="ew")
 
         self.build_status = ctk.CTkLabel(run_card, text="Ready • Click Run to build final video", font=ctk.CTkFont(size=12, weight="bold"))
         self.build_status.grid(row=1, column=0, padx=18, pady=(0, 10), sticky="w")
@@ -1053,8 +1070,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
                 messagebox.showerror("Error Clearing Cache", str(e))
 
     def fetch_api_data(self):
-        key = self.api_key.get().strip()
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = ""
+        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
         self.api_status.configure(text="Fetching voices via AI33Pro v3...", text_color="#3B82F6")
 
         def worker():
@@ -1112,8 +1128,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         self._filter_voices()
 
     def _preview_voice_inline(self, name: str, vid: str):
-        key = self.api_key.get().strip() if hasattr(self, "api_key") else ""
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = ""
+        key = self.api_key.get().strip() if hasattr(self, "api_key") else "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
         out_p = os.path.join(os.environ.get("TEMP", "C:/tmp"), f"_preview_{vid[:12]}.mp3")
         
         def worker():
@@ -1336,8 +1351,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
-        key = self.api_key.get().strip()
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = ""
+        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
@@ -1748,12 +1762,35 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         self.running = False
         self.run_btn.configure(state="normal", text="▶  RUN / RESUME PROJECT")
         self.build_status.configure(text=f"Done: {Path(out).name}")
+        self._last_rendered_video = str(out)
         try:
             import auth_manager
             auth_manager.record_video_export(tool_name="Recap Studio", file_path=str(out))
         except Exception:
             pass
-        messagebox.showinfo("Recap Studio V2.8", f"Final video created:\n{out}")
+        try:
+            import master_queue
+            master_queue.register_rendered_video(video_path=str(out), title=f"Recap Studio — {Path(out).name}", tool_name="Recap Studio")
+        except Exception:
+            messagebox.showinfo("Recap Studio V2.8", f"Final video created:\n{out}")
+
+    def _on_upload_to_channel(self):
+        target = getattr(self, "_last_rendered_video", None)
+        if not target or not os.path.exists(target):
+            cand = self.output_entry.get().strip() if hasattr(self, "output_entry") else ""
+            if cand and os.path.exists(cand):
+                target = cand
+        if not target or not os.path.exists(target):
+            target = filedialog.askopenfilename(
+                title="Select Rendered Video to Upload to YouTube Channel",
+                filetypes=[("MP4 Video", "*.mp4"), ("All Videos", "*.mp4;*.mkv;*.mov;*.avi"), ("All Files", "*.*")]
+            )
+        if target and os.path.exists(target):
+            try:
+                import uploader_engine
+                uploader_engine.show_quick_upload_modal(self, initial_video_path=target, initial_title=Path(target).stem)
+            except Exception as e:
+                messagebox.showerror("Upload", str(e))
 
 
     def _failed(self, err: str):
