@@ -1,7 +1,7 @@
 {
-  "patch_version": "1.0.5",
+  "patch_version": "1.0.6",
   "base_app_version": "1.0.0",
-  "timestamp": "2026-09-22T23:22:05.031076",
+  "timestamp": "2026-09-22T23:31:25.925767",
   "notes": "YT Audio Splitter: added live download speed, ETA & percentage progress; fixed multi-GUI spawning; added 1-click Format Prompt button.",
   "files": [
     {
@@ -78,8 +78,8 @@
     }
   ],
   "broadcast": {
-    "id": "patch_1.0.5_1790099525",
-    "title": "\u26a1 Hot-Patch v1.0.5 Applied",
+    "id": "patch_1.0.6_1790100085",
+    "title": "\u26a1 Hot-Patch v1.0.6 Applied",
     "message": "YT Audio Splitter: added live download speed, ETA & percentage progress; fixed multi-GUI spawning; added 1-click Format Prompt button.",
     "type": "info"
   }
