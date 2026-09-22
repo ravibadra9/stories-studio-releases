@@ -10,7 +10,7 @@ Provides:
 import json, os, threading
 from typing import List, Dict, Any, Optional
 
-DEFAULT_AI33_KEY = ""
+DEFAULT_AI33_KEY = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 _APPDATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "StoriesStudio")
 _CACHE_FILE = os.path.join(_APPDATA, "voice_cache.json")
 _VOICE_LIST_CACHE_FILE = os.path.join(_APPDATA, "ai33_voices_cache.json")
@@ -23,12 +23,9 @@ def _ensure_dir():
 def _load_cache():
     try:
         with open(_CACHE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            if data.get("api_key") == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-                data["api_key"] = ""
-            return data
+            return json.load(f)
     except Exception:
-        return {"api_key": "", "favorites": [], "recent_searches": []}
+        return {"api_key": DEFAULT_AI33_KEY, "favorites": [], "recent_searches": []}
 
 
 def _save_cache(data):
@@ -42,18 +39,13 @@ def _save_cache(data):
 # ═══════════════════════════════════════════════
 def save_api_key(key: str):
     c = _load_cache()
-    cleaned = (key or "").strip()
-    if cleaned == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        cleaned = ""
-    c["api_key"] = cleaned
+    c["api_key"] = key if key and key.strip() else DEFAULT_AI33_KEY
     _save_cache(c)
 
 
 def load_api_key() -> str:
-    key = (_load_cache().get("api_key", "") or "").strip()
-    if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        return ""
-    return key
+    key = _load_cache().get("api_key", "")
+    return key if key and key.strip() else DEFAULT_AI33_KEY
 
 
 # ═══════════════════════════════════════════════
