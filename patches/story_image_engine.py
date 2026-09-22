@@ -807,9 +807,7 @@ def _generate_single_chunk_tts(text: str, voice_id: str, tts_model_id: str, elev
         prefixed_vid = f"elevenlabs_{prefixed_vid}"
 
     last_error = ""
-    api_key_to_use = (elevenlabs_key or os.getenv("AI33_API_KEY") or "").strip()
-    if api_key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        api_key_to_use = ""
+    api_key_to_use = elevenlabs_key or os.getenv("AI33_API_KEY") or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 
     # Tier 1: AI33 Client v3 Endpoint
     try:
@@ -891,7 +889,7 @@ def _generate_single_chunk_tts(text: str, voice_id: str, tts_model_id: str, elev
         last_error = str(exc)
 
     # Tier 2: Direct ElevenLabs API (if custom user API key is provided)
-    if api_key_to_use:
+    if api_key_to_use and api_key_to_use != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
         try:
             bare_vid = clean_vid
             for p in ["elevenlabs_", "minimax_", "clone_", "vbee_", "fishaudio_", "edge_", "kokoro_"]:
