@@ -389,7 +389,7 @@ def generate_tts(text: str, voice_id: str, model_id: str, api_key: str, out_path
             break
 
     # Tier 1: ElevenLabs Direct API
-    if api_key and (api_key.strip() != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt") and prefixed_vid.startswith("elevenlabs_"):
+    if api_key and api_key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt" and prefixed_vid.startswith("elevenlabs_"):
         if log_callback:
             log_callback(f"[tts-fallback] Trying ElevenLabs Direct API...")
         if _try_elevenlabs_direct(text, prefixed_vid, model_id, api_key, out_path, stability, similarity_boost):
