@@ -2006,9 +2006,7 @@ class VoiceSearchWindow(ctk.CTkToplevel):
             pp=os.path.join(TEMP_DIR,f"_voice_preview_{vid[:8]}.mp3")
             try:
                 from ai33_api import AI33Client
-                _ai33_k = (self.api_key or os.getenv("AI33_API_KEY") or "").strip()
-                if _ai33_k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": _ai33_k = ""
-                _ai33_c = AI33Client(api_key=_ai33_k)
+                _ai33_c = AI33Client(api_key=self.api_key or os.getenv("AI33_API_KEY") or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
                 _res = _ai33_c.text_to_speech_v3(text="Hello, this is a voice preview test.", voice_id=vid)
                 if isinstance(_res, (bytes, bytearray)) and len(_res) > 500:
                     with open(pp, "wb") as f: f.write(_res)
@@ -2870,8 +2868,7 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         ctk.CTkLabel(kf,text="Key:",text_color=C["dim"],width=35).pack(side="left")
         self.api_entry=ctk.CTkEntry(kf,show="*",fg_color=C["entry_bg"],text_color=C["text"],border_color=C["border"])
         self.api_entry.pack(side="left",fill="x",expand=True,padx=5)
-        if self.settings.get("api_key") and self.settings.get("api_key") != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            self.api_entry.insert(0, self.settings.get("api_key"))
+        if self.settings.get("api_key"): self.api_entry.insert(0,self.settings.get("api_key"))
         self.api_key = self.api_entry
         self._key_visible = False
         def _toggle_key():
@@ -3086,72 +3083,6 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         self.mtvol_lbl.pack(side="left")
         self.master_tts_vol_var.trace_add("write",lambda*a:self.mtvol_lbl.configure(text=f"{self.master_tts_vol_var.get()}%"))
 
-        # Concurrency Threads for Advance Editor
-        th_adv = ctk.CTkFrame(pad, fg_color="transparent")
-        th_adv.pack(fill="x", padx=5, pady=(2, 4))
-        
-        at_adv = ctk.CTkFrame(th_adv, fg_color="transparent")
-        at_adv.pack(fill="x", pady=2)
-        ctk.CTkLabel(at_adv, text="Audio Thread:", text_color=C["dim"], font=("Segoe UI", 10, "bold"), width=120, anchor="w").pack(side="left")
-        
-        def _dec_tts_adv():
-            global MAX_PARALLEL_TTS
-            if MAX_PARALLEL_TTS > 1:
-                MAX_PARALLEL_TTS -= 1
-                self.adv_audio_th_lbl.configure(text=f"{MAX_PARALLEL_TTS} Threads")
-                self.adv_audio_th_slider.set(MAX_PARALLEL_TTS)
-                
-        def _inc_tts_adv():
-            global MAX_PARALLEL_TTS
-            if MAX_PARALLEL_TTS < 16:
-                MAX_PARALLEL_TTS += 1
-                self.adv_audio_th_lbl.configure(text=f"{MAX_PARALLEL_TTS} Threads")
-                self.adv_audio_th_slider.set(MAX_PARALLEL_TTS)
-                
-        def _on_tts_adv(v):
-            global MAX_PARALLEL_TTS
-            MAX_PARALLEL_TTS = int(float(v))
-            self.adv_audio_th_lbl.configure(text=f"{MAX_PARALLEL_TTS} Threads")
-
-        ctk.CTkButton(at_adv, text="−", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_dec_tts_adv).pack(side="left", padx=(0, 3))
-        self.adv_audio_th_slider = ctk.CTkSlider(at_adv, from_=1, to=16, number_of_steps=15, width=90, height=14, command=_on_tts_adv)
-        self.adv_audio_th_slider.set(MAX_PARALLEL_TTS)
-        self.adv_audio_th_slider.pack(side="left", padx=2)
-        ctk.CTkButton(at_adv, text="+", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_inc_tts_adv).pack(side="left", padx=(3, 5))
-        self.adv_audio_th_lbl = ctk.CTkLabel(at_adv, text=f"{MAX_PARALLEL_TTS} Threads", text_color=C["accent"], font=("Consolas", 10, "bold"), width=68)
-        self.adv_audio_th_lbl.pack(side="left")
-
-        vt_adv = ctk.CTkFrame(th_adv, fg_color="transparent")
-        vt_adv.pack(fill="x", pady=2)
-        ctk.CTkLabel(vt_adv, text="Editing Video Thread:", text_color=C["dim"], font=("Segoe UI", 10, "bold"), width=120, anchor="w").pack(side="left")
-        
-        def _dec_ff_adv():
-            global MAX_PARALLEL_FF
-            if MAX_PARALLEL_FF > 1:
-                MAX_PARALLEL_FF -= 1
-                self.adv_video_th_lbl.configure(text=f"{MAX_PARALLEL_FF} Threads")
-                self.adv_video_th_slider.set(MAX_PARALLEL_FF)
-                
-        def _inc_ff_adv():
-            global MAX_PARALLEL_FF
-            if MAX_PARALLEL_FF < 12:
-                MAX_PARALLEL_FF += 1
-                self.adv_video_th_lbl.configure(text=f"{MAX_PARALLEL_FF} Threads")
-                self.adv_video_th_slider.set(MAX_PARALLEL_FF)
-                
-        def _on_ff_adv(v):
-            global MAX_PARALLEL_FF
-            MAX_PARALLEL_FF = int(float(v))
-            self.adv_video_th_lbl.configure(text=f"{MAX_PARALLEL_FF} Threads")
-
-        ctk.CTkButton(vt_adv, text="−", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_dec_ff_adv).pack(side="left", padx=(0, 3))
-        self.adv_video_th_slider = ctk.CTkSlider(vt_adv, from_=1, to=12, number_of_steps=11, width=90, height=14, command=_on_ff_adv)
-        self.adv_video_th_slider.set(MAX_PARALLEL_FF)
-        self.adv_video_th_slider.pack(side="left", padx=2)
-        ctk.CTkButton(vt_adv, text="+", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_inc_ff_adv).pack(side="left", padx=(3, 5))
-        self.adv_video_th_lbl = ctk.CTkLabel(vt_adv, text=f"{MAX_PARALLEL_FF} Threads", text_color=C["accent"], font=("Consolas", 10, "bold"), width=68)
-        self.adv_video_th_lbl.pack(side="left")
-
         # ── Logo ──
         logo=sec(sb,"Logo / Watermark"); logo.grid(row=row,column=0,sticky="ew",padx=6,pady=4); row+=1
         ctk.CTkCheckBox(logo,text="Enable Logo",variable=self.logo_enabled_var,text_color=C["text"],
@@ -3310,6 +3241,9 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         self._gen_all_btn.pack(side="left",padx=3)
         ctk.CTkButton(ar,text="Merge Final",fg_color=C["accent"],text_color="#000",width=100,height=34,
             font=("Segoe UI",12,"bold"),command=self._merge).pack(side="left",padx=3)
+        self._upload_btn = ctk.CTkButton(ar, text="📤 Upload", fg_color="#E11D48", hover_color="#BE123C", text_color="#fff", width=85, height=34,
+            font=("Segoe UI", 11, "bold"), command=self._on_upload_click)
+        self._upload_btn.pack(side="left", padx=3)
         # Task 10: Stop button
         ctk.CTkButton(ar,text="⏹ Stop",fg_color=C["red"],text_color="#fff",width=70,height=34,
             command=self._stop_gen).pack(side="left",padx=3)
@@ -4318,11 +4252,11 @@ class AdvanceEditorFrame(ctk.CTkFrame):
                 assigned+=1
     # ── Voice Studio & TTS Engine Methods ──
     def _fetch_voices_threaded(self):
-        key = ""
+        key = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
         try:
             if hasattr(self, "api_entry") and self.api_entry.winfo_exists():
                 val = self.api_entry.get().strip()
-                if val and val != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = val
+                if val: key = val
         except Exception:
             pass
         if hasattr(self, "api_status"):
@@ -4347,7 +4281,7 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         try:
             import voice_cache
             key = voice_cache.load_api_key()
-            if hasattr(self, "api_entry") and key and key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt" and self.api_entry.winfo_exists():
+            if hasattr(self, "api_entry") and key and self.api_entry.winfo_exists():
                 try:
                     self.api_entry.delete(0, "end")
                     self.api_entry.insert(0, key)
@@ -4512,8 +4446,7 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
-        key = self.api_entry.get().strip() if (hasattr(self, "api_entry") and self.api_entry.winfo_exists()) else ""
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt": key = ""
+        key = self.api_entry.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
@@ -6208,6 +6141,22 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         self._cancelled=False
         threading.Thread(target=self._mw,args=(clips,sp),daemon=True).start()
 
+    def _on_upload_click(self):
+        target = getattr(self, "_last_final_video", None)
+        if not target or not os.path.exists(target):
+            from tkinter import filedialog
+            target = filedialog.askopenfilename(
+                title="Select Rendered Video to Upload to YouTube Channel",
+                filetypes=[("MP4 Video", "*.mp4"), ("All Videos", "*.mp4;*.mkv;*.mov;*.avi"), ("All Files", "*.*")]
+            )
+        if target and os.path.exists(target):
+            try:
+                from uploader_engine.api import show_quick_upload_modal
+                from pathlib import Path
+                show_quick_upload_modal(self, video_path=target, default_title=Path(target).stem)
+            except Exception as e:
+                messagebox.showerror("Upload", str(e))
+
     def _mw(self,clips,sp):
         self._ss("Normalizing...",C["orange"]); self._sp(0.05); self._sss("merge 1/5: normalize")
         tw,th=get_resolution(clips[0]) if clips else (1920,1080)
@@ -6306,7 +6255,13 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         _finalize_output_resolution(final_out, log=lambda m: self._sss(m))
         self._sp(1.0)
         if os.path.exists(final_out):
+            self._last_final_video = final_out
             self._ss(f"✓ Saved! ({format_duration(get_duration(final_out))})",C["green"])
+            try:
+                import master_queue
+                self.after(200, lambda: master_queue.register_rendered_video(final_out, title=f"Video Master: {os.path.basename(final_out)}", tool_name="Video Master"))
+            except Exception:
+                pass
         else: self._ss("FAILED!",C["red"])
         for f in norm:
             if f and TEMP_DIR in f and os.path.exists(f):
@@ -6986,6 +6941,11 @@ class VideoMasterEditorFrame(AdvanceEditorFrame):
             try:
                 import auth_manager
                 auth_manager.record_video_export(tool_name="Master Video Editor", file_path=save_path)
+            except Exception:
+                pass
+            try:
+                import master_queue
+                self.after(200, lambda: master_queue.register_rendered_video(save_path, title=f"Jesus Prayer: {os.path.basename(save_path)}", tool_name="Jesus Prayer"))
             except Exception:
                 pass
         else:
@@ -7947,7 +7907,7 @@ class SimpleEditorFrame(ctk.CTkFrame):
 
         kf=ctk.CTkFrame(self.elevenlabs_panel,fg_color="transparent"); kf.pack(fill="x",padx=5,pady=3)
         ctk.CTkLabel(kf,text="Key:",text_color=C["dim"],width=35).pack(side="left")
-        self.api_entry=ctk.CTkEntry(kf,show="*",fg_color=C["entry_bg"],text_color=C["text"],placeholder_text="Enter API Key (Optional)...",
+        self.api_entry=ctk.CTkEntry(kf,show="•",fg_color=C["entry_bg"],text_color=C["text"],
             border_color=C["border"]); self.api_entry.pack(side="left",fill="x",expand=True,padx=5)
         self.eye_btn=ctk.CTkButton(kf,text="👁",width=30,fg_color=C["btn"],
             command=self._toggle_key); self.eye_btn.pack(side="left")
@@ -8225,74 +8185,6 @@ class SimpleEditorFrame(ctk.CTkFrame):
             text_color=C["dim"],font=("Segoe UI",9),justify="left"
         ).pack(anchor="w",padx=5,pady=(0,4))
 
-        # Audio & Video Concurrency Threads for VideoMasterEditorFrame
-        th_f = ctk.CTkFrame(ren, fg_color="transparent")
-        th_f.pack(fill="x", padx=5, pady=(4, 2))
-        
-        # Audio Thread
-        at_row = ctk.CTkFrame(th_f, fg_color="transparent")
-        at_row.pack(fill="x", pady=2)
-        ctk.CTkLabel(at_row, text="Audio Thread:", text_color=C["dim"], font=("Segoe UI", 10, "bold"), width=120, anchor="w").pack(side="left")
-        
-        def _dec_tts_th():
-            global MAX_PARALLEL_TTS
-            if MAX_PARALLEL_TTS > 1:
-                MAX_PARALLEL_TTS -= 1
-                self.audio_th_lbl.configure(text=f"{MAX_PARALLEL_TTS} Threads")
-                self.audio_th_slider.set(MAX_PARALLEL_TTS)
-                
-        def _inc_tts_th():
-            global MAX_PARALLEL_TTS
-            if MAX_PARALLEL_TTS < 16:
-                MAX_PARALLEL_TTS += 1
-                self.audio_th_lbl.configure(text=f"{MAX_PARALLEL_TTS} Threads")
-                self.audio_th_slider.set(MAX_PARALLEL_TTS)
-                
-        def _on_tts_slider(v):
-            global MAX_PARALLEL_TTS
-            MAX_PARALLEL_TTS = int(float(v))
-            self.audio_th_lbl.configure(text=f"{MAX_PARALLEL_TTS} Threads")
-
-        ctk.CTkButton(at_row, text="−", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_dec_tts_th).pack(side="left", padx=(0, 3))
-        self.audio_th_slider = ctk.CTkSlider(at_row, from_=1, to=16, number_of_steps=15, width=90, height=14, command=_on_tts_slider)
-        self.audio_th_slider.set(MAX_PARALLEL_TTS)
-        self.audio_th_slider.pack(side="left", padx=2)
-        ctk.CTkButton(at_row, text="+", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_inc_tts_th).pack(side="left", padx=(3, 5))
-        self.audio_th_lbl = ctk.CTkLabel(at_row, text=f"{MAX_PARALLEL_TTS} Threads", text_color=C["accent"], font=("Consolas", 10, "bold"), width=68)
-        self.audio_th_lbl.pack(side="left")
-
-        # Editing Video Thread
-        vt_row = ctk.CTkFrame(th_f, fg_color="transparent")
-        vt_row.pack(fill="x", pady=2)
-        ctk.CTkLabel(vt_row, text="Editing Video Thread:", text_color=C["dim"], font=("Segoe UI", 10, "bold"), width=120, anchor="w").pack(side="left")
-        
-        def _dec_ff_th():
-            global MAX_PARALLEL_FF
-            if MAX_PARALLEL_FF > 1:
-                MAX_PARALLEL_FF -= 1
-                self.video_th_lbl.configure(text=f"{MAX_PARALLEL_FF} Threads")
-                self.video_th_slider.set(MAX_PARALLEL_FF)
-                
-        def _inc_ff_th():
-            global MAX_PARALLEL_FF
-            if MAX_PARALLEL_FF < 12:
-                MAX_PARALLEL_FF += 1
-                self.video_th_lbl.configure(text=f"{MAX_PARALLEL_FF} Threads")
-                self.video_th_slider.set(MAX_PARALLEL_FF)
-                
-        def _on_ff_slider(v):
-            global MAX_PARALLEL_FF
-            MAX_PARALLEL_FF = int(float(v))
-            self.video_th_lbl.configure(text=f"{MAX_PARALLEL_FF} Threads")
-
-        ctk.CTkButton(vt_row, text="−", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_dec_ff_th).pack(side="left", padx=(0, 3))
-        self.video_th_slider = ctk.CTkSlider(vt_row, from_=1, to=12, number_of_steps=11, width=90, height=14, command=_on_ff_slider)
-        self.video_th_slider.set(MAX_PARALLEL_FF)
-        self.video_th_slider.pack(side="left", padx=2)
-        ctk.CTkButton(vt_row, text="+", width=24, height=22, font=("Segoe UI", 11, "bold"), fg_color=C["btn"], hover_color=C["btn_hov"], command=_inc_ff_th).pack(side="left", padx=(3, 5))
-        self.video_th_lbl = ctk.CTkLabel(vt_row, text=f"{MAX_PARALLEL_FF} Threads", text_color=C["accent"], font=("Consolas", 10, "bold"), width=68)
-        self.video_th_lbl.pack(side="left")
-
         # ═══ RIGHT SIDE ═══
         top_bar=ctk.CTkFrame(right,fg_color=C["card"],height=50)
         top_bar.grid(row=0,column=0,sticky="ew",padx=5,pady=5)
@@ -8529,8 +8421,7 @@ class SimpleEditorFrame(ctk.CTkFrame):
 
     def _restore_settings(self):
         s=self.settings
-        if s.get("api_key") and s.get("api_key") != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            self.api_entry.insert(0, s["api_key"])
+        if s.get("api_key"): self.api_entry.insert(0,s["api_key"])
         self.silence_var.set(s.get("silence_pad",0.0))
         self.render_mode_var.set(s.get("render_mode","direct"))
         self.loop_var.set(s.get("loop_count",2))
