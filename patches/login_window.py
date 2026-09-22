@@ -12,11 +12,10 @@ Features:
 
 import json
 import os
-import queue
 import sys
 import threading
 import time
-from typing import Optional, Tuple, Dict, Any, Callable
+from typing import Optional, Tuple, Dict, Any
 
 import customtkinter as ctk
 from PIL import Image
@@ -47,7 +46,23 @@ def resource_path(rel: str) -> str:
 
 
 class LoginWindow:
-    def __init__(self, root: Optional[ctk.CTk] = None):
+    def __init__(
+        self,
+        root: Optional[ctk.CTk] = None,
+        app_name: Optional[str] = None,
+        app_subtitle: Optional[str] = None,
+        app_desc: Optional[str] = None,
+        *args,
+        **kwargs
+    ):
+        self.app_name = app_name or APP_NAME
+        self.app_subtitle = app_subtitle or APP_SUBTITLE
+        self.app_desc = app_desc or (
+            "Next-Gen AI Story, Movie Recap & Audio Suite.\n"
+            "Multi-voice narration, word karaoke captions\n"
+            "and parallel GPU rendering."
+        )
+
         if root is None:
             self.root = ctk.CTk()
             self._owns_root = True
@@ -67,7 +82,7 @@ class LoginWindow:
         self._pw_visible = False
         self._is_loading = False
 
-        self.root.title(f"{APP_NAME} — Authentication & Studio Dashboard")
+        self.root.title(f"{self.app_name} — Authentication & Studio Dashboard")
         self.root.geometry(f"{W}x{H}")
         self.root.minsize(W, H)
         self.root.resizable(False, False)
@@ -86,10 +101,6 @@ class LoginWindow:
         self._build_left_showcase()
         self._build_right_card_container()
 
-        # Thread-safe UI dispatch queue
-        self._ui_queue: queue.Queue = queue.Queue()
-        self._start_queue_poller()
-
         # Check remembered login state
         self._check_initial_auth_state()
 
@@ -100,35 +111,10 @@ class LoginWindow:
         except Exception:
             pass
 
-    def _start_queue_poller(self):
-        try:
-            while not self._ui_queue.empty():
-                fn, args = self._ui_queue.get_nowait()
-                try:
-                    fn(*args)
-                except Exception as ex:
-                    print(f"[UI_QUEUE] Error running callback: {ex}")
-        except Exception:
-            pass
-        if hasattr(self, "root") and self.root.winfo_exists():
-            self.root.after(35, self._start_queue_poller)
-
-    def _dispatch_ui(self, fn: Callable, *args: Any):
-        self._ui_queue.put((fn, args))
-
     def _open_admin(self, event=None):
         try:
-            from auth_manager import is_current_user_admin
-            active_user = getattr(self, "user_data", None)
-            if not is_current_user_admin(active_user):
-                from tkinter import messagebox
-                messagebox.showerror(
-                    "Unauthorized Access",
-                    "⚠️ Access Denied: Unauthorized.\n\nOnly Master Super Admin (8949400100) has permission to open the Admin Panel."
-                )
-                return
             import admin_tool
-            admin_tool.launch_gui_admin(self.root, user_data=active_user)
+            admin_tool.launch_gui_admin(self.root)
         except Exception as e:
             print("[ADMIN] Launch error:", e)
 
@@ -207,21 +193,21 @@ class LoginWindow:
         # Main Brand Title
         ctk.CTkLabel(
             left,
-            text=APP_NAME,
+            text=self.app_name,
             text_color=T.TEXT,
             font=(T.FONT, 38, "bold"),
         ).place(x=54, y=250)
 
         ctk.CTkLabel(
             left,
-            text=APP_SUBTITLE,
+            text=self.app_subtitle,
             text_color=T.VIOLET_HI,
             font=(T.FONT, 11, "bold"),
         ).place(x=56, y=302)
 
         ctk.CTkLabel(
             left,
-            text="Next-Gen AI Story, Movie Recap & Audio Suite.\nMulti-voice narration, word karaoke captions\nand parallel GPU rendering.",
+            text=self.app_desc,
             text_color=T.TEXT_DIM,
             font=(T.FONT, 12),
             justify="left",
@@ -300,7 +286,23 @@ class LoginWindow:
         )
         hw_copy_btn.pack(side="right", padx=6)
 
-        # (Admin Portal button removed from login screen - restricted exclusively to 8949400100 after login or Ctrl+Shift+A)
+        # 👑 Super Admin Portal Button on Login Screen
+        admin_login_btn = ctk.CTkButton(
+            foot,
+            text="👑  Super Admin Portal (Users, License & HWID)",
+            width=360,
+            height=30,
+            corner_radius=8,
+            fg_color="#3b0764",
+            hover_color="#581c87",
+            border_width=1,
+            border_color="#c084fc",
+            text_color="#ffffff",
+            font=(T.FONT, 10, "bold"),
+            cursor="hand2",
+            command=self._open_admin,
+        )
+        admin_login_btn.pack(pady=(8, 0))
 
     # ══════════════════════════════════════════════════════
     # RIGHT CARD CONTAINER (DYNAMIC VIEW)
@@ -346,7 +348,7 @@ class LoginWindow:
             res = verify_login_by_hash(u, h)
             if res.ok and res.user_data:
                 self.user_data = res.user_data
-                self._dispatch_ui(self._update_dashboard_ui, res.user_data)
+                self.after(0, lambda: self._update_dashboard_ui(res.user_data))
         except Exception:
             pass
 
@@ -453,10 +455,8 @@ class LoginWindow:
         info3 = ctk.CTkFrame(row3, fg_color="transparent")
         info3.pack(side="left", fill="both", expand=True)
 
-        is_univ = profile.get("universal") or (str(profile.get("user_id", "")).strip().lower() in ("8949400100", "ravibadra9"))
-        dev_text = "Authorized • Universal Multi-PC (Unlimited)" if is_univ else "Authorized • Single Machine Lock"
         ctk.CTkLabel(info3, text="HARDWARE AUTHORIZATION", text_color=T.TEXT_DIM, font=(T.FONT, 9, "bold"), anchor="w").pack(fill="x")
-        ctk.CTkLabel(info3, text=dev_text, text_color=T.EMERALD_HI, font=(T.FONT, 12, "bold"), anchor="w").pack(fill="x")
+        ctk.CTkLabel(info3, text="Authorized • Single Machine Lock", text_color=T.EMERALD_HI, font=(T.FONT, 12, "bold"), anchor="w").pack(fill="x")
 
         # ── ACTION BUTTONS ──
         actions = ctk.CTkFrame(p, fg_color="transparent")
@@ -475,21 +475,6 @@ class LoginWindow:
             command=self._launch_studio_action,
         )
         self.launch_btn.pack(fill="x", pady=(0, 8))
-
-        from auth_manager import is_current_user_admin
-        if is_current_user_admin(profile):
-            self.admin_btn = ctk.CTkButton(
-                actions,
-                text="👑  Open Super Admin Portal",
-                height=38,
-                corner_radius=10,
-                fg_color="#6366f1",
-                hover_color="#4f46e5",
-                text_color="#ffffff",
-                font=(T.FONT, 12, "bold"),
-                command=self._open_admin,
-            )
-            self.admin_btn.pack(fill="x", pady=(0, 8))
 
         # Secondary Actions (Sync Analytics & Switch Account)
         sec_row = ctk.CTkFrame(actions, fg_color="transparent")
@@ -557,7 +542,7 @@ class LoginWindow:
                 self.dash_status.configure(text="Cloud analytics synchronized successfully ✓", text_color=T.EMERALD)
                 self.after(2000, lambda: self.btn_sync.configure(text="🔄 Sync Cloud"))
 
-            self._dispatch_ui(_done)
+            self.after(0, _done)
 
         threading.Thread(target=_worker, daemon=True).start()
 
@@ -746,13 +731,8 @@ class LoginWindow:
         threading.Thread(target=self._login_worker, args=(u, p), daemon=True).start()
 
     def _login_worker(self, u: str, p: str):
-        try:
-            res = verify_login(u, p)
-            self._dispatch_ui(self._on_login_finished, res)
-        except Exception as e:
-            from auth_manager import AuthResult
-            err_res = AuthResult(False, f"Connection error: {e}")
-            self._dispatch_ui(self._on_login_finished, err_res)
+        res = verify_login(u, p)
+        self.after(0, self._on_login_finished, res)
 
     def _on_login_finished(self, res):
         self._is_loading = False
@@ -794,12 +774,22 @@ class LoginWindow:
 # ══════════════════════════════════════════════════════════
 # RUNNER ENTRY POINT
 # ══════════════════════════════════════════════════════════
-def run_login(root: Optional[ctk.CTk] = None) -> Tuple[bool, Optional[ctk.CTk], Dict[str, Any]]:
+def run_login(
+    root: Optional[ctk.CTk] = None,
+    app_name: Optional[str] = None,
+    app_subtitle: Optional[str] = None,
+    app_desc: Optional[str] = None,
+    *args,
+    **kwargs
+) -> Tuple[bool, Optional[ctk.CTk], Dict[str, Any]]:
     """
     Launches the Login Window and returns:
     (success: bool, root: ctk.CTk | None, user_data: dict)
     """
-    win = LoginWindow(root=root)
+    app_name = app_name or kwargs.get("app_name")
+    app_subtitle = app_subtitle or kwargs.get("app_subtitle")
+    app_desc = app_desc or kwargs.get("app_desc")
+    win = LoginWindow(root=root, app_name=app_name, app_subtitle=app_subtitle, app_desc=app_desc, *args, **kwargs)
     win.mainloop()
     if win.success:
         return True, win.get_root(), win.user_data
