@@ -204,6 +204,12 @@ class BootScreen(ctk.CTk):
             ota_res = ota_patcher.check_and_apply_cloud_patches(timeout=4)
             if ota_res.get("new_patch_applied"):
                 v = ota_res.get("patch_version", "")
+                try:
+                    import winsound
+                    winsound.Beep(587, 80)
+                    winsound.Beep(880, 140)
+                except Exception:
+                    pass
                 self._set_status(f"⚡ Live Hot-Patch v{v} Applied!", f"Patched modules: {', '.join(ota_res.get('applied_files', []))}", 0.65)
                 time.sleep(0.5)
             else:
