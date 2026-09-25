@@ -201,9 +201,13 @@ class BootScreen(ctk.CTk):
         self._set_status("Checking for live Over-The-Air (OTA) patches…", "Connecting to cloud manifest…", 0.45)
         try:
             import ota_patcher
-            ota_res = ota_patcher.check_and_apply_cloud_patches(timeout=4)
+            ota_res = ota_patcher.check_and_apply_cloud_patches(timeout=15)
             if ota_res.get("new_patch_applied"):
                 v = ota_res.get("patch_version", "")
+                try:
+                    ota_patcher.reload_active_patches()
+                except Exception:
+                    pass
                 try:
                     import winsound
                     winsound.Beep(587, 80)
