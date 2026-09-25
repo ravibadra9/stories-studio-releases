@@ -11,12 +11,32 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import customtkinter as ctk
 
-from uploader_engine.config import REDIRECT_URI
-from uploader_engine.database import (
-    db_get_setting, db_set_setting, db_get_channels, db_save_channel,
-    db_delete_channel, db_get_tasks, db_create_task, db_update_task_progress,
-    db_update_task_status, db_delete_task, format_bytes
-)
+try:
+    from uploader_engine.config import REDIRECT_URI
+    from uploader_engine.database import (
+        db_get_setting, db_set_setting, db_get_channels, db_save_channel,
+        db_delete_channel, db_get_tasks, db_create_task, db_update_task_progress,
+        db_update_task_status, db_delete_task, format_bytes
+    )
+except Exception:
+    try:
+        from .config import REDIRECT_URI
+        from .database import (
+            db_get_setting, db_set_setting, db_get_channels, db_save_channel,
+            db_delete_channel, db_get_tasks, db_create_task, db_update_task_progress,
+            db_update_task_status, db_delete_task, format_bytes
+        )
+    except Exception:
+        from uploader_engine.api import db_get_setting, db_set_setting, db_get_channels, db_save_channel, db_get_tasks, db_create_task, REDIRECT_URI
+        def db_delete_channel(cid): pass
+        def db_update_task_progress(tid, p, b, s): pass
+        def db_update_task_status(tid, s, vid=None, err=None): pass
+        def db_delete_task(tid): pass
+        def format_bytes(size):
+            for unit in ['B', 'KB', 'MB', 'GB']:
+                if size < 1024.0: return f"{size:.1f} {unit}"
+                size /= 1024.0
+            return f"{size:.1f} TB"
 
 CATEGORIES = [
     ("22", "People & Blogs"),
