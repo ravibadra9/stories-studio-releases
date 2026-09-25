@@ -289,103 +289,388 @@ def open_api_settings_dialog(parent=None, on_saved=None):
     ).pack(side="right")
 
 
+def sync_live_streamer_accounts():
+    """
+    Auto-discovers and imports any existing channel accounts and client_secrets.json
+    from Live Streamer (~/.live_streamer_rdp) so the user never has to re-authenticate!
+    """
+    try:
+        ls_dir = os.path.expanduser("~/.live_streamer_rdp")
+        if not os.path.exists(ls_dir):
+            return 0
+
+        # 1. Sync client_secrets.json if not already present
+        sec_src = os.path.join(ls_dir, "client_secrets.json")
+        sec_dest = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "StoriesStudio", "client_secrets.json")
+        if os.path.exists(sec_src) and not os.path.exists(sec_dest):
+            try:
+                import shutil
+                shutil.copy2(sec_src, sec_dest)
+            except Exception:
+                pass
+
+        # 2. Sync accounts
+        acc_file = os.path.join(ls_dir, "accounts.json")
+        if not os.path.exists(acc_file):
+            return 0
+
+        import json
+        with open(acc_file, "r", encoding="utf-8") as f:
+            accounts = json.load(f)
+
+        imported = 0
+        for acc in accounts:
+            cid = acc.get("id")
+            token_file = acc.get("token_file", "")
+            if not cid or not token_file or not os.path.exists(token_file):
+                continue
+            with open(token_file, "r", encoding="utf-8") as tf:
+                tok_data = json.load(tf)
+            ch_record = {
+                "id": cid,
+                "title": acc.get("title", "YouTube Channel"),
+                "custom_url": acc.get("custom_url", ""),
+                "thumbnail_url": acc.get("avatar_url", ""),
+                "subscriber_count": 0,
+                "video_count": 0,
+                "access_token": tok_data.get("token", ""),
+                "refresh_token": tok_data.get("refresh_token", ""),
+                "token_expiry": tok_data.get("expiry", ""),
+                "client_id": tok_data.get("client_id", ""),
+                "client_secret": tok_data.get("client_secret", "")
+            }
+            db_save_channel(ch_record)
+            if tok_data.get("client_id") and not db_get_setting("google_client_id"):
+                db_set_setting("google_client_id", tok_data["client_id"])
+            if tok_data.get("client_secret") and not db_get_setting("google_client_secret"):
+                db_set_setting("google_client_secret", tok_data["client_secret"])
+            imported += 1
+
+        return imported
+    except Exception as e:
+        print(f"[OTA] Notice syncing Live Streamer accounts: {e}")
+        return 0
+
+
 def open_connect_channel_dialog(parent=None, on_success=None):
     """
-    Opens the interactive dialog to authenticate and link a new YouTube Channel via Google OAuth.
+    Dedicated dialog matching Live Streamer for connecting YouTube accounts safely via
+    Remote / Anti-Detect Browser OAuth flow (Browse Secrets -> Copy Auth Link -> Paste Redirect Code).
+    Supports multiple channels.
     """
     import webbrowser
-    client_id = db_get_setting("google_client_id")
-    client_secret = db_get_setting("google_client_secret")
+    import json
+    from uploader_engine.auth import (
+        generate_authorization_url, exchange_code_for_tokens,
+        get_channel_profile_from_token, parse_auth_code
+    )
 
-    if not client_id or not client_secret:
-        res = messagebox.askyesno(
-            "API Credentials Required",
-            "Google Client ID & Secret are required to link a YouTube Channel.\n\n"
-            "Would you like to configure your Google API credentials now?"
-        )
-        if res:
-            open_api_settings_dialog(
-                parent=parent,
-                on_saved=lambda: open_connect_channel_dialog(parent=parent, on_success=on_success)
-            )
-        return
-
-    from uploader_engine.auth import generate_authorization_url, exchange_code_for_tokens, get_channel_profile_from_token
-    auth_url = generate_authorization_url(client_id, redirect_uri=REDIRECT_URI)
+    # Auto-sync Live Streamer accounts if available
+    sync_live_streamer_accounts()
 
     dialog = ctk.CTkToplevel(parent)
-    dialog.title("➕ Connect YouTube Channel")
-    dialog.geometry("660x540")
+    dialog.title("Connect YouTube Channel (Anti-Detect & Multi-Account)")
+    dialog.geometry("660x780")
+    dialog.minsize(600, 680)
     dialog.configure(fg_color="#080c14")
     dialog.attributes("-topmost", True)
     dialog.focus_force()
 
-    # Header with API settings quick action
-    header_row = ctk.CTkFrame(dialog, fg_color="transparent")
-    header_row.pack(fill="x", padx=20, pady=(16, 4))
+    # Find secrets file
+    def find_existing_secrets_file():
+        candidates = [
+            os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "StoriesStudio", "client_secrets.json"),
+            os.path.expanduser("~/.live_streamer_rdp/client_secrets.json")
+        ]
+        for p in candidates:
+            if os.path.exists(p):
+                return p
+        return ""
 
-    ctk.CTkLabel(header_row, text="⚡ Connect YouTube Channel", font=ctk.CTkFont(size=18, weight="bold"), text_color="#ff0033").pack(side="left")
+    state = {
+        "secrets_file": find_existing_secrets_file(),
+        "client_id": db_get_setting("google_client_id"),
+        "client_secret": db_get_setting("google_client_secret"),
+        "redirect_uri": "http://localhost:8080/",
+        "auth_url": ""
+    }
 
-    def edit_api_creds():
-        dialog.destroy()
-        open_api_settings_dialog(parent=parent, on_saved=lambda: open_connect_channel_dialog(parent=parent, on_success=on_success))
+    # If secrets file exists, parse client_id and client_secret if needed
+    if state["secrets_file"] and os.path.exists(state["secrets_file"]):
+        try:
+            with open(state["secrets_file"], "r", encoding="utf-8") as f:
+                s_data = json.load(f)
+            cfg = s_data.get("installed") or s_data.get("web") or s_data
+            if cfg.get("client_id"):
+                state["client_id"] = cfg["client_id"].strip()
+                db_set_setting("google_client_id", state["client_id"])
+            if cfg.get("client_secret"):
+                state["client_secret"] = cfg["client_secret"].strip()
+                db_set_setting("google_client_secret", state["client_secret"])
+            uris = cfg.get("redirect_uris", [])
+            if uris:
+                state["redirect_uri"] = uris[0]
+        except Exception:
+            pass
+
+    scroll = ctk.CTkScrollableFrame(dialog, fg_color="transparent")
+    scroll.pack(fill="both", expand=True, padx=16, pady=16)
+
+    # Header Card
+    header = ctk.CTkFrame(scroll, fg_color="#181824", corner_radius=10)
+    header.pack(fill="x", pady=(0, 10))
+
+    ctk.CTkLabel(
+        header,
+        text="🔗 Connect YouTube Channel (Anti-Detect / IP-Safe)",
+        font=ctk.CTkFont(size=16, weight="bold"),
+        text_color="#ffffff"
+    ).pack(anchor="w", padx=16, pady=(12, 2))
+
+    ctk.CTkLabel(
+        header,
+        text="No RDP browser will open. You can copy the login link directly into your anti-detect browser profile.",
+        font=ctk.CTkFont(size=11),
+        text_color="#94a3b8"
+    ).pack(anchor="w", padx=16, pady=(0, 12))
+
+    # STEP 1: client_secrets.json Card
+    s1_card = ctk.CTkFrame(scroll, fg_color="#181824", corner_radius=10)
+    s1_card.pack(fill="x", pady=6)
+
+    ctk.CTkLabel(
+        s1_card,
+        text="Step 1: Google Cloud client_secrets.json",
+        font=ctk.CTkFont(size=13, weight="bold"),
+        text_color="#cbd5e1"
+    ).pack(anchor="w", padx=16, pady=(12, 4))
+
+    sec_row = ctk.CTkFrame(s1_card, fg_color="transparent")
+    sec_row.pack(fill="x", padx=16, pady=(0, 10))
+
+    has_secrets = bool((state["secrets_file"] and os.path.exists(state["secrets_file"])) or (state["client_id"] and state["client_secret"]))
+    init_txt = f"✓ Using: {os.path.basename(state['secrets_file']) if state['secrets_file'] else 'Configured Credentials'}" if has_secrets else "No client_secrets.json selected"
+    init_col = "#10b981" if has_secrets else "#94a3b8"
+
+    secrets_lbl = ctk.CTkLabel(
+        sec_row,
+        text=init_txt,
+        font=ctk.CTkFont(size=11),
+        text_color=init_col,
+        anchor="w"
+    )
+    secrets_lbl.pack(side="left", fill="x", expand=True)
+
+    def browse_secrets():
+        from tkinter import filedialog
+        fp = filedialog.askopenfilename(
+            title="Select Google Cloud client_secrets.json",
+            filetypes=[("JSON Files", "*.json"), ("All Files", "*.*")]
+        )
+        if fp and os.path.exists(fp):
+            try:
+                with open(fp, "r", encoding="utf-8") as f:
+                    s_data = json.load(f)
+                cfg = s_data.get("installed") or s_data.get("web") or s_data
+                cid = cfg.get("client_id", "").strip()
+                csec = cfg.get("client_secret", "").strip()
+                if not cid or not csec:
+                    messagebox.showerror("Invalid JSON", "Selected JSON does not contain client_id and client_secret.")
+                    return
+                state["client_id"] = cid
+                state["client_secret"] = csec
+                db_set_setting("google_client_id", cid)
+                db_set_setting("google_client_secret", csec)
+                uris = cfg.get("redirect_uris", [])
+                if uris:
+                    state["redirect_uri"] = uris[0]
+
+                # Copy to local appdata
+                save_p = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "StoriesStudio", "client_secrets.json")
+                os.makedirs(os.path.dirname(save_p), exist_ok=True)
+                import shutil
+                shutil.copy2(fp, save_p)
+                state["secrets_file"] = save_p
+
+                secrets_lbl.configure(text=f"✓ Using: {os.path.basename(fp)}", text_color="#10b981")
+                messagebox.showinfo("Loaded", f"Loaded credentials from {os.path.basename(fp)} successfully!")
+            except Exception as e:
+                messagebox.showerror("Error", f"Failed to load JSON file: {e}")
 
     ctk.CTkButton(
-        header_row, text="⚙️ API Config", width=95, height=28,
-        fg_color="#1e293b", hover_color="#334155", font=ctk.CTkFont(size=11),
-        command=edit_api_creds
+        sec_row,
+        text="Browse JSON...",
+        width=120,
+        height=30,
+        font=ctk.CTkFont(size=11),
+        fg_color="#3b82f6",
+        hover_color="#2563eb",
+        command=browse_secrets
     ).pack(side="right")
 
-    guide_box = ctk.CTkFrame(dialog, fg_color="#101726", corner_radius=10)
-    guide_box.pack(fill="x", padx=20, pady=6)
-    guide_text = (
-        "📌 Quick Channel Linking Guide:\n"
-        "1. Click '🌐 Open' or '📋 Copy' below to authenticate in your browser.\n"
-        "2. Grant permissions in your Google/YouTube account.\n"
-        "3. Copy the redirected URL (or code) from your browser address bar.\n"
-        "4. Paste it in Step 2 below and click '⚡ Link Channel'."
+    # STEP 2: Generate & Copy Link Card
+    s2_card = ctk.CTkFrame(scroll, fg_color="#181824", corner_radius=10)
+    s2_card.pack(fill="x", pady=6)
+
+    ctk.CTkLabel(
+        s2_card,
+        text="Step 2: Generate & Copy Google Auth Link",
+        font=ctk.CTkFont(size=13, weight="bold"),
+        text_color="#cbd5e1"
+    ).pack(anchor="w", padx=16, pady=(12, 4))
+
+    ctk.CTkLabel(
+        s2_card,
+        text="Click below to generate a secure Google OAuth link for your YouTube channel:",
+        font=ctk.CTkFont(size=11),
+        text_color="#94a3b8"
+    ).pack(anchor="w", padx=16, pady=(0, 6))
+
+    gen_btn_row = ctk.CTkFrame(s2_card, fg_color="transparent")
+    gen_btn_row.pack(fill="x", padx=16, pady=4)
+
+    def copy_link_to_clipboard():
+        if state["auth_url"]:
+            dialog.clipboard_clear()
+            dialog.clipboard_append(state["auth_url"])
+            copy_btn.configure(text="✓ Copied!", fg_color="#059669")
+            dialog.after(2000, lambda: copy_btn.configure(text="📋 Copy Link", fg_color="#10b981"))
+
+    def generate_auth_link():
+        cid = state.get("client_id") or db_get_setting("google_client_id")
+        csec = state.get("client_secret") or db_get_setting("google_client_secret")
+        if not cid or not csec:
+            messagebox.showerror("Secrets Missing", "Please select your Google Cloud client_secrets.json in Step 1 first (or click Browse JSON).")
+            return
+        try:
+            auth_url = generate_authorization_url(cid, redirect_uri=state.get("redirect_uri", "http://localhost:8080/"))
+            state["auth_url"] = auth_url
+            url_display.delete(0, "end")
+            url_display.insert(0, auth_url)
+            copy_btn.configure(state="normal")
+            open_btn.configure(state="normal")
+            copy_link_to_clipboard()
+            messagebox.showinfo(
+                "Link Generated & Copied!",
+                "Google Auth link has been generated and copied to your clipboard!\n\n"
+                "Now switch to your Anti-Detect browser profile, paste the link in the address bar, and click 'Allow'."
+            )
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to generate authorization URL: {e}")
+
+    gen_link_btn = ctk.CTkButton(
+        gen_btn_row,
+        text="⚡ Generate Authorization Link",
+        height=34,
+        font=ctk.CTkFont(size=12, weight="bold"),
+        fg_color="#e11d48",
+        hover_color="#be123c",
+        command=generate_auth_link
     )
-    ctk.CTkLabel(guide_box, text=guide_text, font=ctk.CTkFont(size=11), justify="left", text_color="#bae6fd").pack(padx=14, pady=10, anchor="w")
+    gen_link_btn.pack(side="left", fill="x", expand=True, padx=(0, 6))
 
-    ctk.CTkLabel(dialog, text="Step 1: Authorization Link", font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8").pack(padx=20, anchor="w", pady=(8, 2))
-    link_frame = ctk.CTkFrame(dialog, fg_color="transparent")
-    link_frame.pack(fill="x", padx=20)
-    link_entry = ctk.CTkEntry(link_frame, width=420)
-    link_entry.insert(0, auth_url)
-    link_entry.configure(state="readonly")
-    link_entry.pack(side="left", fill="x", expand=True)
+    copy_btn = ctk.CTkButton(
+        gen_btn_row,
+        text="📋 Copy Link",
+        height=34,
+        width=100,
+        font=ctk.CTkFont(size=12, weight="bold"),
+        fg_color="#10b981",
+        hover_color="#059669",
+        state="normal" if state.get("auth_url") else "disabled",
+        command=copy_link_to_clipboard
+    )
+    copy_btn.pack(side="right")
 
-    def open_link():
-        webbrowser.open(auth_url)
+    def open_link_in_browser():
+        if state.get("auth_url"):
+            webbrowser.open(state["auth_url"])
 
-    btn_open = ctk.CTkButton(link_frame, text="🌐 Open", width=75, command=open_link, fg_color="#2563eb", hover_color="#1d4ed8")
-    btn_open.pack(side="left", padx=(8, 0))
+    open_btn = ctk.CTkButton(
+        gen_btn_row,
+        text="🌐 Open",
+        height=34,
+        width=80,
+        font=ctk.CTkFont(size=12, weight="bold"),
+        fg_color="#2563eb",
+        hover_color="#1d4ed8",
+        state="normal" if state.get("auth_url") else "disabled",
+        command=open_link_in_browser
+    )
+    open_btn.pack(side="right", padx=(0, 6))
 
-    def copy_link():
-        dialog.clipboard_clear()
-        dialog.clipboard_append(auth_url)
-        btn_copy.configure(text="✓ Copied!")
-        dialog.after(2000, lambda: btn_copy.configure(text="📋 Copy"))
+    url_display = ctk.CTkEntry(
+        s2_card,
+        placeholder_text="Google Auth link will appear here...",
+        height=32,
+        font=ctk.CTkFont(size=10)
+    )
+    url_display.pack(fill="x", padx=16, pady=(4, 12))
 
-    btn_copy = ctk.CTkButton(link_frame, text="📋 Copy", width=75, command=copy_link, fg_color="#ff0033", hover_color="#d4002a")
-    btn_copy.pack(side="left", padx=(6, 0))
+    # STEP 3: Approval Instruction Card (Warm Amber)
+    s3_card = ctk.CTkFrame(scroll, fg_color="#101018", corner_radius=10)
+    s3_card.pack(fill="x", pady=6)
 
-    ctk.CTkLabel(dialog, text="Step 2: Paste Redirected URL or Authorization Code", font=ctk.CTkFont(size=12, weight="bold"), text_color="#38bdf8").pack(padx=20, anchor="w", pady=(12, 2))
-    code_entry = ctk.CTkTextbox(dialog, height=80, fg_color="#101726")
-    code_entry.pack(fill="x", padx=20, pady=4)
+    ctk.CTkLabel(
+        s3_card,
+        text="Step 3: Approve in your Anti-Detect Browser Profile",
+        font=ctk.CTkFont(size=12, weight="bold"),
+        text_color="#f59e0b"
+    ).pack(anchor="w", padx=16, pady=(10, 2))
 
-    def complete_connection():
-        code_or_url = code_entry.get("1.0", "end-1c").strip()
-        if not code_or_url:
-            messagebox.showerror("Input Required", "Please paste the redirected URL or code from your browser.")
+    instructions = (
+        "1. Go to your Anti-Detect browser profile where your YouTube channel is logged in.\n"
+        "2. Paste the copied link into the address bar and press Enter.\n"
+        "3. Choose your YouTube Channel account and click 'Allow'.\n"
+        "4. Google will redirect to 'http://localhost:8080/?code=4/0A...' (or http://localhost:8000/...). \n"
+        "5. Copy that entire URL (or the code) from your browser address bar and paste it below!"
+    )
+    ctk.CTkLabel(
+        s3_card,
+        text=instructions,
+        font=ctk.CTkFont(size=11),
+        text_color="#cbd5e1",
+        justify="left"
+    ).pack(anchor="w", padx=16, pady=(0, 10))
+
+    # STEP 4: Complete Verification Card
+    s4_card = ctk.CTkFrame(scroll, fg_color="#181824", corner_radius=10)
+    s4_card.pack(fill="x", pady=6)
+
+    ctk.CTkLabel(
+        s4_card,
+        text="Step 4: Paste Redirected URL or Code & Complete",
+        font=ctk.CTkFont(size=13, weight="bold"),
+        text_color="#cbd5e1"
+    ).pack(anchor="w", padx=16, pady=(12, 4))
+
+    code_entry = ctk.CTkEntry(
+        s4_card,
+        placeholder_text="Paste 'http://localhost:8080/?code=4/0A...' or code here",
+        height=36,
+        font=ctk.CTkFont(size=11)
+    )
+    code_entry.pack(fill="x", padx=16, pady=4)
+
+    def finish_connection():
+        inp = code_entry.get().strip()
+        if not inp:
+            messagebox.showerror("Code Required", "Please paste the redirect URL or code from your browser.")
             return
 
-        btn_submit.configure(text="Connecting...", state="disabled")
+        cid = state.get("client_id") or db_get_setting("google_client_id")
+        csec = state.get("client_secret") or db_get_setting("google_client_secret")
+        if not cid or not csec:
+            messagebox.showerror("Credentials Missing", "Please select client_secrets.json first.")
+            return
+
+        complete_btn.configure(text="Verifying & Connecting...", state="disabled")
         dialog.update()
 
-        def bg_exchange():
+        def bg_task():
             try:
-                token_data = exchange_code_for_tokens(client_id, client_secret, code_or_url, REDIRECT_URI)
+                redirect_uri = state.get("redirect_uri", "http://localhost:8080/")
+                token_data = exchange_code_for_tokens(cid, csec, inp, redirect_uri=redirect_uri)
                 profile = get_channel_profile_from_token(token_data["access_token"])
 
                 channel_record = {
@@ -398,36 +683,146 @@ def open_connect_channel_dialog(parent=None, on_success=None):
                     "access_token": token_data.get("access_token"),
                     "refresh_token": token_data.get("refresh_token"),
                     "token_expiry": token_data.get("token_expiry"),
-                    "client_id": client_id,
-                    "client_secret": client_secret
+                    "client_id": cid,
+                    "client_secret": csec
                 }
                 db_save_channel(channel_record)
-                dialog.after(0, lambda: on_finish_ok(profile))
-            except Exception as ex:
-                dialog.after(0, lambda err=ex: on_finish_err(err))
 
-        def on_finish_ok(profile):
-            dialog.destroy()
-            messagebox.showinfo("Success!", f"🎉 Successfully connected YouTube channel:\n{profile['title']}")
+                def on_done():
+                    complete_btn.configure(text="✅ Complete Channel Connection", state="normal")
+                    code_entry.delete(0, "end")
+                    refresh_connected_channels()
+                    messagebox.showinfo("Channel Connected!", f"🎉 Successfully connected YouTube channel:\n\n{profile['title']} ({profile.get('custom_url') or profile['id']})")
+                    if on_success:
+                        try:
+                            on_success(profile)
+                        except Exception:
+                            pass
+                dialog.after(0, on_done)
+            except Exception as ex:
+                def on_err(e):
+                    complete_btn.configure(text="✅ Complete Channel Connection", state="normal")
+                    messagebox.showerror("Verification Failed", f"Failed to authenticate channel:\n{e}")
+                dialog.after(0, lambda: on_err(ex))
+
+        threading.Thread(target=bg_task, daemon=True).start()
+
+    complete_btn = ctk.CTkButton(
+        s4_card,
+        text="✅ Complete Channel Connection",
+        height=38,
+        font=ctk.CTkFont(size=13, weight="bold"),
+        fg_color="#10b981",
+        hover_color="#059669",
+        command=finish_connection
+    )
+    complete_btn.pack(fill="x", padx=16, pady=(8, 14))
+
+    # SECTION: Connected Channels List Card
+    channels_card = ctk.CTkFrame(scroll, fg_color="#181824", corner_radius=10)
+    channels_card.pack(fill="x", pady=6)
+
+    ch_header = ctk.CTkFrame(channels_card, fg_color="transparent")
+    ch_header.pack(fill="x", padx=16, pady=(12, 4))
+
+    ctk.CTkLabel(
+        ch_header,
+        text="📺 Connected YouTube Channels:",
+        font=ctk.CTkFont(size=13, weight="bold"),
+        text_color="#cbd5e1"
+    ).pack(side="left")
+
+    def import_from_live_streamer():
+        cnt = sync_live_streamer_accounts()
+        refresh_connected_channels()
+        if cnt > 0:
+            messagebox.showinfo("Imported", f"Successfully synced channel(s) from Live Streamer!")
             if on_success:
                 try:
-                    on_success(profile)
+                    channels = db_get_channels()
+                    if channels:
+                        on_success(channels[0])
+                except Exception:
+                    pass
+        else:
+            messagebox.showinfo("Sync", "Channels are already up to date with Live Streamer.")
+
+    ctk.CTkButton(
+        ch_header,
+        text="🔄 Sync Live Streamer",
+        width=130,
+        height=26,
+        font=ctk.CTkFont(size=10, weight="bold"),
+        fg_color="#334155",
+        hover_color="#475569",
+        command=import_from_live_streamer
+    ).pack(side="right")
+
+    channels_container = ctk.CTkFrame(channels_card, fg_color="transparent")
+    channels_container.pack(fill="x", padx=16, pady=(0, 12))
+
+    def remove_channel(cid):
+        if messagebox.askyesno("Confirm", "Are you sure you want to remove this channel account?"):
+            try:
+                import sqlite3
+                from pathlib import Path
+                _DB_P = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))) / "StoriesStudio" / "uploader.db"
+                conn = sqlite3.connect(str(_DB_P))
+                conn.execute("DELETE FROM channels WHERE id = ?", (cid,))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            refresh_connected_channels()
+            if on_success:
+                try:
+                    on_success(None)
                 except Exception:
                     pass
 
-        def on_finish_err(err):
-            btn_submit.configure(text="⚡ Link Channel", state="normal")
-            messagebox.showerror("Auth Error", f"Failed to authenticate channel:\n{err}")
+    def refresh_connected_channels():
+        for widget in channels_container.winfo_children():
+            widget.destroy()
 
-        threading.Thread(target=bg_exchange, daemon=True).start()
+        channels = db_get_channels()
+        if not channels:
+            ctk.CTkLabel(
+                channels_container,
+                text="No channels connected yet. Follow the 4 steps above to add your first channel!",
+                font=ctk.CTkFont(size=11),
+                text_color="#64748b"
+            ).pack(anchor="w", pady=4)
+            return
 
-    btn_row = ctk.CTkFrame(dialog, fg_color="transparent")
-    btn_row.pack(fill="x", padx=20, pady=(14, 10))
+        for ch in channels:
+            row = ctk.CTkFrame(channels_container, fg_color="#101018", corner_radius=6)
+            row.pack(fill="x", pady=3)
 
-    btn_submit = ctk.CTkButton(btn_row, text="⚡ Link Channel", command=complete_connection, fg_color="#ff0033", hover_color="#d4002a", height=38, font=ctk.CTkFont(weight="bold"))
-    btn_submit.pack(side="left", fill="x", expand=True, padx=(0, 8))
+            title = ch.get("title", "Unnamed Channel")
+            handle = ch.get("custom_url") or ch.get("id")
 
-    ctk.CTkButton(btn_row, text="Cancel", command=dialog.destroy, fg_color="#1e293b", hover_color="#334155", width=90, height=38).pack(side="right")
+            info_lbl = ctk.CTkLabel(
+                row,
+                text=f"🟢 {title} ({handle})",
+                font=ctk.CTkFont(size=11, weight="bold"),
+                text_color="#10b981",
+                anchor="w"
+            )
+            info_lbl.pack(side="left", padx=10, pady=8, fill="x", expand=True)
+
+            del_btn = ctk.CTkButton(
+                row,
+                text="Remove",
+                width=70,
+                height=26,
+                font=ctk.CTkFont(size=10),
+                fg_color="#334155",
+                hover_color="#dc2626",
+                command=lambda cid=ch.get("id"): remove_channel(cid)
+            )
+            del_btn.pack(side="right", padx=6)
+
+    refresh_connected_channels()
 
 
 def queue_video_for_upload(
