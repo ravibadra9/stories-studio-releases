@@ -50,7 +50,9 @@ class HotPatchMetaFinder(importlib.abc.MetaPathFinder):
             
             candidate_pkg = os.path.join(HOT_PATCH_DIR, *rel_parts, "__init__.py")
             if os.path.isfile(candidate_pkg):
-                return importlib.util.spec_from_file_location(fullname, candidate_pkg)
+                pkg_dir = os.path.join(HOT_PATCH_DIR, *rel_parts)
+                spec = importlib.util.spec_from_file_location(fullname, candidate_pkg, submodule_search_locations=[pkg_dir])
+                return spec
         except Exception:
             pass
         return None
@@ -61,8 +63,26 @@ def reload_active_patches():
     """Immediately inject all hot-patched modules from disk into sys.modules."""
     if not os.path.exists(HOT_PATCH_DIR):
         return
+    # 1. First inject package __init__.py modules so parent packages exist
     for root, _, files in os.walk(HOT_PATCH_DIR):
-        for f in files:
+        if "__init__.py" in files:
+            full_p = os.path.join(root, "__init__.py")
+            rel_p = os.path.relpath(full_p, HOT_PATCH_DIR)
+            pkg_name = os.path.dirname(rel_p).replace("\\", ".").replace("/", ".")
+            if pkg_name:
+                try:
+                    spec = importlib.util.spec_from_file_location(pkg_name, full_p, submodule_search_locations=[root])
+                    if spec and spec.loader:
+                        mod = importlib.util.module_from_spec(spec)
+                        sys.modules[pkg_name] = mod
+                        spec.loader.exec_module(mod)
+                        print(f"[OTA] Injected hot-patched package: {pkg_name}")
+                except Exception as e:
+                    print(f"[OTA] Error loading package {pkg_name}: {e}")
+
+    # 2. Next inject standalone submodules
+    for root, _, files in os.walk(HOT_PATCH_DIR):
+        for f in sorted(files):
             if f.endswith(".py") and not f.startswith("__"):
                 full_p = os.path.join(root, f)
                 rel_p = os.path.relpath(full_p, HOT_PATCH_DIR)
