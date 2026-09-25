@@ -4,10 +4,146 @@ import threading
 from typing import Optional, Dict, Any, List
 import customtkinter as ctk
 from tkinter import messagebox
-from uploader_engine.database import (
-    db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_save_channel
-)
-from uploader_engine.config import REDIRECT_URI
+
+# Bulletproof imports with fallback
+try:
+    from uploader_engine.database import (
+        db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_save_channel
+    )
+    from uploader_engine.config import REDIRECT_URI
+except Exception:
+    try:
+        from .database import (
+            db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_save_channel
+        )
+        from .config import REDIRECT_URI
+    except Exception:
+        import sqlite3
+        from pathlib import Path
+        _LOCAL_APP = Path(os.environ.get("LOCALAPPDATA", os.path.expanduser("~"))) / "StoriesStudio"
+        _DB_P = _LOCAL_APP / "uploader.db"
+        _DB_P.parent.mkdir(parents=True, exist_ok=True)
+        REDIRECT_URI = "http://localhost:8000/api/channels/auth/callback"
+
+        def _get_conn():
+            c = sqlite3.connect(str(_DB_P))
+            c.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
+            c.execute("""CREATE TABLE IF NOT EXISTS channels (
+                id TEXT PRIMARY KEY, title TEXT NOT NULL, custom_url TEXT, thumbnail_url TEXT,
+                subscriber_count INTEGER DEFAULT 0, video_count INTEGER DEFAULT 0,
+                access_token TEXT, refresh_token TEXT, token_expiry TEXT,
+                client_id TEXT, client_secret TEXT, created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+            )""")
+            c.execute("""CREATE TABLE IF NOT EXISTS upload_tasks (
+                id TEXT PRIMARY KEY, channel_id TEXT NOT NULL, video_path TEXT NOT NULL,
+                original_filename TEXT NOT NULL, file_size INTEGER DEFAULT 0, title TEXT NOT NULL,
+                description TEXT DEFAULT '', thumbnail_path TEXT, tags TEXT DEFAULT '[]',
+                category_id TEXT DEFAULT '22', privacy_status TEXT DEFAULT 'private',
+                publish_at TEXT, scheduled_upload_time TEXT, timezone_name TEXT,
+                made_for_kids INTEGER DEFAULT 0, status TEXT DEFAULT 'pending',
+                progress_percent REAL DEFAULT 0.0, bytes_uploaded INTEGER DEFAULT 0,
+                speed_mbps REAL DEFAULT 0.0, youtube_video_id TEXT, error_message TEXT,
+                created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP, completed_at TIMESTAMP
+            )""")
+            c.commit()
+            return c
+
+        def db_get_setting(key: str, default: str = "") -> str:
+            try:
+                conn = _get_conn()
+                cur = conn.cursor()
+                cur.execute("SELECT value FROM settings WHERE key = ?", (key,))
+                row = cur.fetchone()
+                conn.close()
+                return row[0] if row else default
+            except Exception:
+                return default
+
+        def db_set_setting(key: str, value: str):
+            try:
+                conn = _get_conn()
+                cur = conn.cursor()
+                cur.execute("INSERT INTO settings (key, value) VALUES (?, ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value", (key, value))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+
+        def db_get_channels():
+            try:
+                conn = _get_conn()
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM channels ORDER BY created_at DESC")
+                rows = cur.fetchall()
+                res = [dict(r) for r in rows]
+                conn.close()
+                return res
+            except Exception:
+                return []
+
+        def db_save_channel(data: dict):
+            try:
+                conn = _get_conn()
+                cur = conn.cursor()
+                cur.execute("""INSERT INTO channels (id, title, custom_url, thumbnail_url, subscriber_count, video_count, access_token, refresh_token, token_expiry, client_id, client_secret)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    ON CONFLICT(id) DO UPDATE SET
+                        title = excluded.title, custom_url = excluded.custom_url, thumbnail_url = excluded.thumbnail_url,
+                        subscriber_count = excluded.subscriber_count, video_count = excluded.video_count,
+                        access_token = excluded.access_token, refresh_token = excluded.refresh_token,
+                        token_expiry = excluded.token_expiry, client_id = excluded.client_id, client_secret = excluded.client_secret,
+                        updated_at = CURRENT_TIMESTAMP""", (
+                    data["id"], data["title"], data.get("custom_url", ""), data.get("thumbnail_url", ""),
+                    data.get("subscriber_count", 0), data.get("video_count", 0),
+                    data.get("access_token", ""), data.get("refresh_token", ""),
+                    data.get("token_expiry", ""), data.get("client_id", ""), data.get("client_secret", "")
+                ))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+
+        def db_create_task(t: dict) -> str:
+            tid = t.get("id") or str(uuid.uuid4())
+            try:
+                conn = _get_conn()
+                cur = conn.cursor()
+                import json
+                cur.execute("""INSERT INTO upload_tasks (id, channel_id, video_path, original_filename, file_size, title, description, thumbnail_path, tags, category_id, privacy_status, publish_at, scheduled_upload_time, timezone_name, made_for_kids, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""", (
+                    tid, t["channel_id"], t["video_path"], t.get("original_filename", ""),
+                    t.get("file_size", 0), t.get("title", ""), t.get("description", ""),
+                    t.get("thumbnail_path"), json.dumps(t.get("tags", [])),
+                    t.get("category_id", "22"), t.get("privacy_status", "private"),
+                    t.get("publish_at"), t.get("scheduled_upload_time"), t.get("timezone_name", ""),
+                    1 if t.get("made_for_kids") else 0, t.get("status", "pending")
+                ))
+                conn.commit()
+                conn.close()
+            except Exception:
+                pass
+            return tid
+
+        def db_get_tasks():
+            try:
+                conn = _get_conn()
+                conn.row_factory = sqlite3.Row
+                cur = conn.cursor()
+                cur.execute("SELECT * FROM upload_tasks ORDER BY created_at DESC")
+                rows = cur.fetchall()
+                import json
+                tasks = []
+                for r in rows:
+                    td = dict(r)
+                    try: td["tags"] = json.loads(td["tags"])
+                    except Exception: td["tags"] = []
+                    tasks.append(td)
+                conn.close()
+                return tasks
+            except Exception:
+                return []
 
 def get_connected_channels() -> List[Dict[str, Any]]:
     """Returns list of all connected YouTube channels."""
