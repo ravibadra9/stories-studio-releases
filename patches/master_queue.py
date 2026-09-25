@@ -708,6 +708,11 @@ class MasterQueueFrame(ctk.CTkFrame):
         self._refresh_timer()
 
     def _refresh_channels(self, target_id=None):
+        try:
+            from uploader_engine.api import sync_live_streamer_accounts
+            sync_live_streamer_accounts()
+        except Exception:
+            pass
         names, lookup, _ = get_channel_map()
         self.ch_id_map = lookup
         if names:
