@@ -725,14 +725,26 @@ class MasterQueueFrame(ctk.CTkFrame):
 
     def _on_add_channel(self):
         try:
-            from uploader_engine.api import open_connect_channel_dialog
+            try:
+                from uploader_engine.api import open_connect_channel_dialog
+            except Exception:
+                if "uploader_engine.api" in sys.modules:
+                    del sys.modules["uploader_engine.api"]
+                from uploader_engine.api import open_connect_channel_dialog
             open_connect_channel_dialog(self, on_success=lambda p: self._refresh_channels(p.get("id")))
         except Exception as ex:
-            messagebox.showerror("Error", str(ex))
+            import traceback
+            traceback.print_exc()
+            messagebox.showerror("Error", f"Failed to open channel dialog:\n{ex}")
 
     def _on_api_config(self):
         try:
-            from uploader_engine.api import open_api_settings_dialog
+            try:
+                from uploader_engine.api import open_api_settings_dialog
+            except Exception:
+                if "uploader_engine.api" in sys.modules:
+                    del sys.modules["uploader_engine.api"]
+                from uploader_engine.api import open_api_settings_dialog
             open_api_settings_dialog(self, on_saved=self._refresh_channels)
         except Exception as ex:
             messagebox.showerror("Error", str(ex))
