@@ -247,7 +247,7 @@ def apply_patch_payload(relative_path: str, code_content: str, log_fn: Optional[
 def check_and_apply_cloud_patches(
     manifest_url: Optional[str] = None,
     log_fn: Optional[Callable[[str], None]] = None,
-    timeout: int = 6
+    timeout: int = 15
 ) -> Dict[str, Any]:
     """
     Check remote manifest, download new/updated script files, verify syntax, and apply.
@@ -371,6 +371,11 @@ def check_and_apply_cloud_patches(
 
             global _active_patch_info
             _active_patch_info = new_status
+
+            try:
+                reload_active_patches()
+            except Exception:
+                pass
 
             result["success"] = True
             result["new_patch_applied"] = True
