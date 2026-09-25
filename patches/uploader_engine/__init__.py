@@ -3,6 +3,7 @@ from uploader_engine.api import (
     show_quick_upload_modal, 
     open_connect_channel_dialog, 
     open_api_settings_dialog,
+    sync_live_streamer_accounts,
     get_connected_channels
 )
 from uploader_engine.database import db_get_channels, db_get_tasks, db_get_setting
@@ -12,6 +13,7 @@ __all__ = [
     "show_quick_upload_modal",
     "open_connect_channel_dialog",
     "open_api_settings_dialog",
+    "sync_live_streamer_accounts",
     "get_connected_channels",
     "db_get_channels",
     "db_get_tasks",
