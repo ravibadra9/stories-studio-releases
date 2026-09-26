@@ -210,10 +210,33 @@ try:
     import customtkinter as ctk
     class CTk3DButton(ctk.CTkFrame):
         def __init__(self, master, text="BUTTON", command=None, width=140, height=42,
-                     fg_color=THEME["btn_indigo"], hover_color=THEME["btn_indigo_hover"],
-                     shadow_color=THEME["btn_indigo_shadow"], text_color="#ffffff",
-                     font=FONTS["btn_3d"], corner_radius=10, border_width=1, border_color="", **kwargs):
-            super().__init__(master, fg_color="transparent", width=width, height=height + 4, **kwargs)
+                     fg_color=None, hover_color=None, shadow_color=None, text_color="#ffffff",
+                     font=None, corner_radius=10, border_width=1, border_color="", color=None, **kwargs):
+            if color:
+                c_key = f"btn_{color.lower()}"
+                if c_key in THEME:
+                    fg_color = fg_color or THEME[c_key]
+                    hover_color = hover_color or THEME.get(f"{c_key}_hover", THEME[c_key])
+                    shadow_color = shadow_color or THEME.get(f"{c_key}_shadow", "#1e1b4b")
+                elif color.lower() in ("magenta", "pink"):
+                    fg_color = fg_color or THEME.get("btn_pink", "#ec4899")
+                    hover_color = hover_color or THEME.get("btn_pink_hover", "#f472b6")
+                    shadow_color = shadow_color or THEME.get("btn_pink_shadow", "#9d174d")
+                elif color.lower() == "emerald":
+                    fg_color = fg_color or THEME.get("btn_emerald", "#10b981")
+                    hover_color = hover_color or THEME.get("btn_emerald_hover", "#34d399")
+                    shadow_color = shadow_color or THEME.get("btn_emerald_shadow", "#065f46")
+
+            fg_color = fg_color or THEME.get("btn_indigo", "#6366f1")
+            hover_color = hover_color or THEME.get("btn_indigo_hover", "#818cf8")
+            shadow_color = shadow_color or THEME.get("btn_indigo_shadow", "#3730a3")
+            font = font or FONTS.get("btn_3d", ("Segoe UI", 13, "bold"))
+
+            frame_kwargs = {k: v for k, v in kwargs.items() if k in (
+                "width", "height", "fg_color", "border_color", "border_width",
+                "corner_radius", "bg_color"
+            )}
+            super().__init__(master, fg_color="transparent", width=width, height=height + 4, **frame_kwargs)
             self.grid_propagate(False)
             self.pack_propagate(False)
             self._cmd = command
