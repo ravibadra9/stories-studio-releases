@@ -264,6 +264,8 @@ def get_user_profile(user_id: Optional[str] = None) -> Dict[str, Any]:
         "user_id": user_id or "Guest",
         "name": (user_id or "Guest Creator").title(),
         "active": True,
+        "role": "super_admin" if str(user_id).strip() == "8949400100" else "user",
+        "is_admin": (str(user_id).strip() == "8949400100"),
         "expires_on": "",
         "validity_display": "✨ Lifetime Access",
         "badge_color": "#10b981",
@@ -531,8 +533,6 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
         or user.get("unlimited_machines")
         or user.get("bypass_machine_lock")
         or (user.get("machine_lock") is False)
-        or user.get("role") in ("super_admin", "admin")
-        or user.get("is_admin") is True
         or str(user.get("machine_id", "")).strip().lower() in ("universal", "unlimited", "all", "*", "multi", "none")
     )
 
@@ -554,9 +554,9 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
     else:
         log_login(user_id)
 
-    # Role identification (Super Admin check — strictly 8949400100)
-    is_admin = (user_id == "8949400100")
-    user_role = "super_admin" if is_admin else user.get("role", "user")
+    # Role identification (Super Admin check — strictly and exclusively 8949400100)
+    is_admin = (str(user_id).strip() == "8949400100")
+    user_role = "super_admin" if is_admin else "user"
 
     remote_exports = int(user.get("exports_count") or 0) if user else 0
     local_exports = get_video_exports_count(user_id)
@@ -588,13 +588,16 @@ def _verify_core(user_id: str, password_hash: str) -> AuthResult:
 
 
 def is_current_user_admin(user_data: Optional[Dict[str, Any]] = None) -> bool:
-    """Returns True ONLY if active user is 8949400100."""
+    """Returns True ONLY and EXCLUSIVELY if active user ID is 8949400100."""
     try:
-        data = user_data or get_user_profile()
-        if not data:
-            return False
-        uid = str(data.get("user_id", "")).strip().lower()
-        return uid == "8949400100"
+        if isinstance(user_data, dict):
+            uid = str(user_data.get("user_id", "")).strip().lower()
+            return uid == "8949400100"
+        prof = get_user_profile()
+        if isinstance(prof, dict):
+            uid = str(prof.get("user_id", "")).strip().lower()
+            return uid == "8949400100"
+        return False
     except Exception:
         return False
 
@@ -620,10 +623,13 @@ def refresh_user_profile(user_id: Optional[str] = None) -> Dict[str, Any]:
                 remote_exports = int(user.get("exports_count") or 0)
                 local_exports = get_video_exports_count(uid)
                 final_exports = max(remote_exports, local_exports)
+                is_admin = (str(uid).strip() == "8949400100")
                 profile = {
                     "user_id": uid,
                     "name": user.get("name") or user.get("display_name") or uid.title(),
                     "active": user.get("active", True),
+                    "role": "super_admin" if is_admin else "user",
+                    "is_admin": is_admin,
                     "expires_on": user.get("expires_on", ""),
                     "validity_display": expiry_info["validity_display"],
                     "badge_color": expiry_info["badge_color"],
