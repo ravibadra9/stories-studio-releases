@@ -48,9 +48,28 @@ from video_engine import (
     detect_hardware_acceleration
 )
 
+# Ensure root workspace and uploader_engine are on sys.path
+_THIS_FILE = Path(__file__).resolve()
+for _cand in [
+    _THIS_FILE.parent,
+    _THIS_FILE.parent.parent,
+    _THIS_FILE.parent.parent.parent,
+    _THIS_FILE.parent.parent.parent.parent,
+]:
+    if _cand.is_dir() and str(_cand) not in sys.path:
+        sys.path.insert(0, str(_cand))
+
+try:
+    from uploader_engine.pre_render_upload_ui import DualVariationUploadPanel
+    from uploader_engine.api import show_quick_upload_modal
+except Exception:
+    DualVariationUploadPanel = None
+    show_quick_upload_modal = None
+
+
 
 def parse_songs_text(raw_text: str) -> List[Dict[str, str]]:
-    """Parses pasted text containing headers like 'Song 1', 'Song 2', etc."""
+    """Parses pasted text containing headers like 'Song 1', 'Song 2', etc. Also supports per-song [Style: ...] tags."""
     if not raw_text or not raw_text.strip():
         return []
 
@@ -58,8 +77,10 @@ def parse_songs_text(raw_text: str) -> List[Dict[str, str]]:
     songs = []
     current_title = ""
     current_lyrics_lines = []
+    current_style = ""
 
     header_pattern = re.compile(r'^\s*\[?\s*(?:Song|Track)?\s*(\d+)[:\-\.\s]*(.*?)\]?\s*$', re.IGNORECASE)
+    style_pattern = re.compile(r'^\s*\[?(?:Style|Genre|Music Style|Prompt)[:\-\s]+(.*?)\]?\s*$', re.IGNORECASE)
 
     for line in lines:
         stripped = line.strip()
@@ -76,9 +97,11 @@ def parse_songs_text(raw_text: str) -> List[Dict[str, str]]:
                 if lyrics_text or current_title:
                     songs.append({
                         "title": current_title if current_title else f"Song {len(songs)+1}",
-                        "lyrics": lyrics_text
+                        "lyrics": lyrics_text,
+                        "style": current_style
                     })
                 current_lyrics_lines = []
+                current_style = ""
 
             song_num = match.group(1)
             extra_title = match.group(2).strip(" -:[]")
@@ -87,14 +110,19 @@ def parse_songs_text(raw_text: str) -> List[Dict[str, str]]:
             else:
                 current_title = f"Song {song_num}"
         else:
-            current_lyrics_lines.append(line)
+            s_match = style_pattern.match(line)
+            if s_match:
+                current_style = s_match.group(1).strip()
+            else:
+                current_lyrics_lines.append(line)
 
     if current_title or current_lyrics_lines:
         lyrics_text = "\n".join(current_lyrics_lines).strip()
         if lyrics_text or current_title:
             songs.append({
                 "title": current_title if current_title else f"Song {len(songs)+1}",
-                "lyrics": lyrics_text
+                "lyrics": lyrics_text,
+                "style": current_style
             })
 
     return songs
@@ -105,6 +133,7 @@ def analyze_lyrics(raw_text: str) -> Dict[str, Any]:
     Analyzes bulk lyrics in real time:
     - Counts detected songs
     - Counts words, characters, non-space characters, and lines for each song
+    - Extracts per-song music style if present
     - Calculates total album words, characters, and estimated audio runtime
     - Evaluates song length health (Ideal, Short, Long)
     """
@@ -118,6 +147,7 @@ def analyze_lyrics(raw_text: str) -> Dict[str, Any]:
     for idx, song in enumerate(songs, 1):
         lyrics = song.get("lyrics", "")
         title = song.get("title", f"Song {idx}")
+        song_style = song.get("style", "")
 
         words = len(re.findall(r'\b\w+\b', lyrics))
         chars = len(lyrics)
@@ -148,6 +178,8 @@ def analyze_lyrics(raw_text: str) -> Dict[str, Any]:
         song_details.append({
             "idx": idx,
             "title": title,
+            "lyrics": lyrics,
+            "style": song_style,
             "words": words,
             "chars": chars,
             "chars_no_space": chars_no_space,
@@ -956,13 +988,16 @@ It speaks before I step inside!"""
     lbl_stat_time = ctk.CTkLabel(summary_strip, text="⏱️ ~9:15 Mins", font=FONTS["small_bold"], text_color="#ec4899")
     lbl_stat_time.grid(row=0, column=3, padx=6, pady=4)
 
-    # ── Per-Song Detailed Breakdown Container ──
+    # ── Per-Song Detailed Breakdown Container & Custom Styles Storage ──
     breakdown_lbl = ctk.CTkLabel(suno_box, text="📊 Per-Song Live Word & Character Detailing:", font=FONTS["small_bold"], text_color=THEME["text"])
     breakdown_lbl.grid(row=5, column=0, sticky="w", padx=6, pady=(2, 2))
 
     breakdown_container = ctk.CTkFrame(suno_box, fg_color="transparent")
     breakdown_container.grid(row=6, column=0, sticky="ew", padx=2, pady=(0, 4))
     breakdown_container.grid_columnconfigure(0, weight=1)
+
+    # State dict to preserve user-entered custom styles across lyrics re-parsing
+    per_song_custom_styles: Dict[str, str] = {}
 
     def _update_lyrics_detailing(event=None):
         raw = songs_textbox.get("1.0", "end-1c")
@@ -985,7 +1020,7 @@ It speaks before I step inside!"""
         if not analysis["songs"]:
             empty_lbl = ctk.CTkLabel(
                 breakdown_container,
-                text="ℹ️ Paste or type lyrics with 'Song 1', 'Song 2' headers above to view instant word count and character detailing.",
+                text="ℹ️ Paste or type lyrics with 'Song 1', 'Song 2' headers above to view instant word count, character detailing, and custom music styles.",
                 font=FONTS["small_bold"],
                 text_color=THEME["text_muted"],
                 wraplength=460,
@@ -1002,12 +1037,12 @@ It speaks before I step inside!"""
                 border_width=1,
                 border_color="#273146"
             )
-            row_card.pack(fill="x", pady=2)
+            row_card.pack(fill="x", pady=3)
             row_card.grid_columnconfigure(1, weight=1)
 
-            # Left: Song Number & Title
+            # ── Top Sub-Row: Song Number & Title + Metric Badges ──
             title_f = ctk.CTkFrame(row_card, fg_color="transparent")
-            title_f.grid(row=0, column=0, sticky="w", padx=8, pady=4)
+            title_f.grid(row=0, column=0, sticky="w", padx=8, pady=(4, 2))
 
             ctk.CTkLabel(
                 title_f,
@@ -1017,9 +1052,8 @@ It speaks before I step inside!"""
                 anchor="w"
             ).pack(side="left")
 
-            # Right: Metric Badges (Words, Characters, Lines, Est Time, Health)
             metrics_f = ctk.CTkFrame(row_card, fg_color="transparent")
-            metrics_f.grid(row=0, column=1, sticky="e", padx=8, pady=4)
+            metrics_f.grid(row=0, column=1, sticky="e", padx=8, pady=(4, 2))
 
             # Words badge
             ctk.CTkLabel(
@@ -1080,6 +1114,138 @@ It speaks before I step inside!"""
                 padx=6,
                 pady=2
             ).pack(side="left", padx=2)
+
+            # ── Bottom Sub-Row: Per-Song Custom Music Style Override ──
+            style_row = ctk.CTkFrame(row_card, fg_color="#0e1320", corner_radius=6, border_width=1, border_color="#1e293b")
+            style_row.grid(row=1, column=0, columnspan=2, sticky="ew", padx=8, pady=(2, 6))
+            style_row.grid_columnconfigure(1, weight=1)
+
+            ctk.CTkLabel(
+                style_row,
+                text="🎨 Style:",
+                font=FONTS["small_bold"],
+                text_color="#38bdf8"
+            ).grid(row=0, column=0, padx=(8, 4), pady=4, sticky="w")
+
+            song_key = s["title"]
+            song_idx = s.get("idx", 1)
+            # Look up previously saved custom style for this song, or use style parsed from [Style: ...] in lyrics
+            if song_key in per_song_custom_styles:
+                init_val = per_song_custom_styles[song_key]
+            elif str(song_idx) in per_song_custom_styles:
+                init_val = per_song_custom_styles[str(song_idx)]
+            elif f"Song {song_idx}" in per_song_custom_styles:
+                init_val = per_song_custom_styles[f"Song {song_idx}"]
+            else:
+                init_val = s.get("style", "")
+                per_song_custom_styles[song_key] = init_val
+                per_song_custom_styles[str(song_idx)] = init_val
+                per_song_custom_styles[f"Song {song_idx}"] = init_val
+
+            song_style_var = ctk.StringVar(value=init_val)
+
+            style_entry_song = ctk.CTkEntry(
+                style_row,
+                textvariable=song_style_var,
+                placeholder_text="Uses Global Style... (Click '📋 Paste Style' to override)",
+                height=26,
+                fg_color="#161d2d",
+                border_width=1,
+                border_color="#a855f7" if init_val.strip() else "#2b3954",
+                corner_radius=6,
+                font=FONTS["small"],
+                text_color="#f8fafc"
+            )
+            style_entry_song.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
+
+            # Paste Style Button
+            btn_paste_style = ctk.CTkButton(
+                style_row,
+                text="📋 Paste Style",
+                width=92,
+                height=24,
+                fg_color="#6366f1",
+                hover_color="#4f46e5",
+                font=FONTS["small_bold"],
+                text_color="#ffffff",
+                corner_radius=5
+            )
+            btn_paste_style.grid(row=0, column=2, padx=3, pady=4)
+
+            # Badge Label
+            badge_lbl = ctk.CTkLabel(
+                style_row,
+                text="🎯 Custom Active" if init_val.strip() else "🌐 Global Style",
+                font=FONTS["small_bold"],
+                text_color="#c084fc" if init_val.strip() else "#64748b",
+                fg_color="#2d1b4e" if init_val.strip() else "#1a2234",
+                corner_radius=4,
+                padx=6,
+                pady=2
+            )
+            badge_lbl.grid(row=0, column=3, padx=3, pady=4)
+
+            # Clear / Reset Button
+            btn_reset_style = ctk.CTkButton(
+                style_row,
+                text="✕ Clear",
+                width=52,
+                height=24,
+                fg_color="#334155" if init_val.strip() else "#1e293b",
+                hover_color="#475569",
+                font=FONTS["small_bold"],
+                text_color="#cbd5e1" if init_val.strip() else "#64748b",
+                corner_radius=5
+            )
+            btn_reset_style.grid(row=0, column=4, padx=(2, 6), pady=4)
+
+            def _paste_style_action(sk=song_key, s_idx=song_idx, sv=song_style_var, se=style_entry_song, bp=btn_paste_style):
+                clip = ""
+                for getter in [container.clipboard_get, row_card.clipboard_get]:
+                    try:
+                        clip = getter().strip()
+                        if clip:
+                            break
+                    except Exception:
+                        pass
+                if clip:
+                    clip_clean = " ".join(clip.split())
+                    sv.set(clip_clean)
+                    per_song_custom_styles[sk] = clip_clean
+                    per_song_custom_styles[str(s_idx)] = clip_clean
+                    per_song_custom_styles[f"Song {s_idx}"] = clip_clean
+                    bp.configure(text="✅ Pasted!", fg_color="#10b981")
+                    container.after(1200, lambda: bp.configure(text="📋 Paste Style", fg_color="#6366f1"))
+                else:
+                    bp.configure(text="⚠️ Empty", fg_color="#f59e0b")
+                    container.after(1200, lambda: bp.configure(text="📋 Paste Style", fg_color="#6366f1"))
+                    se.focus_set()
+
+            btn_paste_style.configure(command=_paste_style_action)
+
+            def _on_style_change(*args, sk=song_key, s_idx=song_idx, sv=song_style_var, bl=badge_lbl, se=style_entry_song, br=btn_reset_style):
+                val = sv.get().strip()
+                per_song_custom_styles[sk] = val
+                per_song_custom_styles[str(s_idx)] = val
+                per_song_custom_styles[f"Song {s_idx}"] = val
+                if val:
+                    bl.configure(text="🎯 Custom Active", text_color="#c084fc", fg_color="#2d1b4e")
+                    se.configure(border_color="#a855f7")
+                    br.configure(fg_color="#334155", text_color="#cbd5e1")
+                else:
+                    bl.configure(text="🌐 Global Style", text_color="#64748b", fg_color="#1a2234")
+                    se.configure(border_color="#2b3954")
+                    br.configure(fg_color="#1e293b", text_color="#64748b")
+
+            song_style_var.trace_add("write", _on_style_change)
+
+            def _reset_song_style(sk=song_key, s_idx=song_idx, sv=song_style_var):
+                sv.set("")
+                per_song_custom_styles[sk] = ""
+                per_song_custom_styles[str(s_idx)] = ""
+                per_song_custom_styles[f"Song {s_idx}"] = ""
+
+            btn_reset_style.configure(command=_reset_song_style)
 
     # Real-time event bindings (on key release, paste, focus, click)
     songs_textbox.bind("<KeyRelease>", _update_lyrics_detailing)
@@ -1656,6 +1822,33 @@ It speaks before I step inside!"""
         font=FONTS["btn_small"]
     ).grid(row=3, column=1, columnspan=2, sticky="ew", padx=6, pady=(2, 6))
 
+    # ----------------------------------------------------------------
+    # Card 11: 📤 Direct YouTube Upload & Publishing (Pre-Render Direct Setup)
+    # ----------------------------------------------------------------
+    c_upload = CollapsibleCard(
+        left_scroll,
+        "Direct YouTube Channel Upload (Pre-Render Setup)",
+        icon="📤",
+        badge_text="Direct Upload Ready",
+        default_expanded=True
+    )
+    all_cards.append(c_upload)
+    c_upload.body.grid_columnconfigure(0, weight=1)
+
+    ctk.CTkLabel(
+        c_upload.body,
+        text="⚡ Select channel & configure upload here so completed videos upload immediately upon render (saving time!).",
+        font=FONTS["small"],
+        text_color="#94a3b8",
+        justify="left"
+    ).pack(fill="x", padx=6, pady=(0, 6))
+
+    if DualVariationUploadPanel:
+        dual_upload_panel = DualVariationUploadPanel(c_upload.body)
+    else:
+        dual_upload_panel = None
+        ctk.CTkLabel(c_upload.body, text="Uploader module unavailable", text_color="#ef4444").pack()
+
     # Master Floating 3D Action Button (Large, Bright & Bold)
     fab_container = ctk.CTkFrame(left_scroll, fg_color="transparent")
     fab_container.pack(fill="x", padx=12, pady=16)
@@ -1676,19 +1869,21 @@ It speaks before I step inside!"""
     def _open_channel_uploader():
         chosen_vid = getattr(container, "_last_rendered_video", "")
         if not chosen_vid or not os.path.exists(chosen_vid):
-            from tkinter import filedialog
             chosen_vid = filedialog.askopenfilename(
                 title="Select Rendered Video to Upload to Channel",
                 filetypes=[("MP4 Video", "*.mp4"), ("All Videos", "*.mp4;*.mkv;*.mov;*.avi"), ("All Files", "*.*")]
             )
         if chosen_vid and os.path.exists(chosen_vid):
             try:
-                import master_queue
-                master_queue.register_rendered_video(
-                    chosen_vid,
-                    title=f"Bulk Studio: {Path(chosen_vid).stem}",
-                    tool_name="Bulk Video Studio"
-                )
+                if show_quick_upload_modal:
+                    show_quick_upload_modal(parent=container, video_path=chosen_vid, default_title=Path(chosen_vid).stem)
+                else:
+                    import master_queue
+                    master_queue.register_rendered_video(
+                        chosen_vid,
+                        title=f"Bulk Studio: {Path(chosen_vid).stem}",
+                        tool_name="Bulk Video Studio"
+                    )
             except Exception as e:
                 print(f"[BULK_STUDIO] Upload dialog error: {e}")
 
@@ -1704,6 +1899,7 @@ It speaks before I step inside!"""
         command=_open_channel_uploader
     )
     btn_upload_channel.pack(fill="x", pady=(8, 0))
+
 
     # ════════════════════════════════════════════════════════════════
     # RIGHT PANEL: REALTIME 3D CANVAS & PROCESS MONITOR
@@ -2075,8 +2271,18 @@ It speaks before I step inside!"""
         _load_profile_to_form(new_key)
         profile_segmented.set("🎬 Video 1 (Channel 1 Profile)" if new_key == "video_1" else "🎬 Video 2 (Channel 2 Profile)")
         prev_switcher.set("Video 1" if new_key == "video_1" else "Video 2")
+        if dual_upload_panel and hasattr(dual_upload_panel, "tab_selector"):
+            try:
+                dual_upload_panel.tab_selector.set("🎬 Video 1 (Variation 1) Upload" if new_key == "video_1" else "🎬 Video 2 (Variation 2) Upload")
+                if new_key == "video_1":
+                    dual_upload_panel._show_v1()
+                else:
+                    dual_upload_panel._show_v2()
+            except Exception:
+                pass
         _log_console(f"Switched active channel profile to: {new_key.upper()}")
         _schedule_state_save()
+
 
     def _on_profile_switch_gui(val):
         target = "video_1" if "1" in val else "video_2"
@@ -2725,6 +2931,15 @@ It speaks before I step inside!"""
     # MASTER PIPELINE EXECUTION ENGINE (6-STEP BATCH PROCESS)
     # ════════════════════════════════════════════════════════════════
     def _trigger_full_pipeline():
+        try:
+            _execute_full_pipeline()
+        except Exception as e:
+            import traceback
+            traceback.print_exc()
+            btn_start_3d.configure(state="normal", text="🚀  START BULK GENERATION & DUAL RENDER")
+            _show_alert("Pipeline Startup Error", f"Failed to start pipeline:\n{e}")
+
+    def _execute_full_pipeline():
         audio_mode = audio_source_mode_var.get()
         is_premade = (audio_mode == "premade_audio")
         is_video_mode = (studio_mode_var.get() == "video_to_music")
@@ -2804,9 +3019,15 @@ It speaks before I step inside!"""
             w.destroy()
 
         cards_data = []
-        for song in parsed_songs:
+        for s_idx, song in enumerate(parsed_songs, 1):
             s_title = song["title"]
             s_lyrics = song["lyrics"]
+            custom_s = (
+                per_song_custom_styles.get(s_title, "").strip()
+                or per_song_custom_styles.get(str(s_idx), "").strip()
+                or per_song_custom_styles.get(f"Song {s_idx}", "").strip()
+                or song.get("style", "").strip()
+            )
 
             card = ctk.CTkFrame(queue_scroll, fg_color=THEME["card"], corner_radius=10, border_width=1, border_color=THEME["card_border"])
             card.pack(fill="x", pady=4, ipady=4)
@@ -2822,6 +3043,14 @@ It speaks before I step inside!"""
             preview_lyrics = (s_lyrics[:60] + "...") if len(s_lyrics) > 60 else s_lyrics
             ctk.CTkLabel(info_box, text=f"Audio: {preview_lyrics}", font=FONTS["small_bold"], text_color=THEME["text_muted"], anchor="w").pack(fill="x")
 
+            # Style info label in queue card
+            if custom_s:
+                eff_disp = f"🎯 Custom Style: {custom_s[:48]}..." if len(custom_s) > 48 else f"🎯 Custom Style: {custom_s}"
+                ctk.CTkLabel(info_box, text=eff_disp, font=FONTS["small_bold"], text_color="#c084fc", anchor="w").pack(fill="x")
+            else:
+                eff_disp = f"🌐 Global Style: {style_prompt[:48]}..." if len(style_prompt) > 48 else f"🌐 Global Style: {style_prompt}"
+                ctk.CTkLabel(info_box, text=eff_disp, font=FONTS["small_bold"], text_color="#94a3b8", anchor="w").pack(fill="x")
+
             p_bar = ctk.CTkProgressBar(info_box, progress_color=THEME["accent"], fg_color="#121622", height=8)
             p_bar.pack(fill="x", pady=(4, 0))
             p_bar.set(0)
@@ -2829,6 +3058,7 @@ It speaks before I step inside!"""
             cards_data.append({
                 "title": s_title,
                 "lyrics": s_lyrics,
+                "custom_style": custom_s,
                 "card": card,
                 "st_lbl": st_lbl,
                 "p_bar": p_bar,
@@ -2910,13 +3140,17 @@ It speaks before I step inside!"""
                         if api_client is None:
                             api_client = SunoAPI(key)
 
-                        _log_console(f"Requesting Suno API for '{s_title}'...")
-                        container.after(0, lambda sl=st_lbl, pb=p_bar: (sl.configure(text="⚡ Requesting..."), pb.set(0.1)))
+                        custom_s = (item.get("custom_style") or "").strip()
+                        effective_style = custom_s if custom_s else style_prompt
+                        style_source = "🎯 CUSTOM" if custom_s else "🌐 GLOBAL"
+
+                        _log_console(f"Requesting Suno API for '{s_title}' [{style_source} Style: '{effective_style}']...")
+                        container.after(0, lambda sl=st_lbl, pb=p_bar, ss=style_source: (sl.configure(text=f"⚡ Requesting ({ss})..."), pb.set(0.1)))
 
                         ok, task_id_or_err, credits, raw = api_client.generate_music_custom(
                             title=s_title,
                             lyrics=s_lyrics,
-                            tags=style_prompt
+                            tags=effective_style
                         )
 
                         if ok:
@@ -3199,7 +3433,7 @@ It speaks before I step inside!"""
                     _log_console("=== PIPELINE FINISHED SUCCESSFULLY ===")
                     _log_console(f"Output Video 1: {v1_out_path}")
                     _log_console(f"Output Video 2: {v2_out_path}")
-                    _finish_pipeline(True, v1_out_path, v2_out_path, str(out_folder))
+                    _finish_pipeline(True, v1_out_path, v2_out_path, str(out_folder), v1_txt_path, v2_txt_path, titles, style_prompt)
                 elif ok1 or ok2:
                     good_v = v1_out_path if ok1 else v2_out_path
                     _update_step(6, 100, f"⚠️ PROCESS PARTIAL: 1 Video Rendered in {chosen_res} (1 Failed)", 1.0)
@@ -3212,7 +3446,7 @@ It speaks before I step inside!"""
                         _log_console(f"Output Video 2: {v2_out_path}")
                     else:
                         _log_console("Video 2 render failed.")
-                    _finish_pipeline(True, good_v, "", str(out_folder))
+                    _finish_pipeline(True, good_v, "", str(out_folder), v1_txt_path if ok1 else "", v2_txt_path if ok2 else "", titles, style_prompt)
                 else:
                     _update_step(6, 0, f"❌ PROCESS FAILED! Video Rendering Failed in {chosen_res}!", 0.0)
                     _log_console("=== PIPELINE FAILED (See console logs above for FFmpeg error details) ===")
@@ -3230,28 +3464,531 @@ It speaks before I step inside!"""
             master_pbar.set(bar_val)
         container.after(0, _u)
 
-    def _finish_pipeline(success: bool, v1_path: str = "", v2_path: str = "", folder_path: str = ""):
+    def _finish_pipeline(success: bool, v1_path: str = "", v2_path: str = "", folder_path: str = "",
+                         v1_txt: str = "", v2_txt: str = "", song_titles: list = None, style_tag: str = ""):
         def _f():
             btn_start_3d.configure(state="normal", text="🚀  START BULK GENERATION & DUAL RENDER")
             if success:
+                tasks_to_upload = []
+                ch1_name = ""
+                ch2_name = ""
+
+                # 1. Video 1 (Track 1) Direct Upload Check
+                if v1_path and os.path.exists(v1_path) and dual_upload_panel and hasattr(dual_upload_panel, "v1_section"):
+                    if dual_upload_panel.v1_section.upload_enabled_var.get():
+                        v1_desc_default = ""
+                        if v1_txt and os.path.exists(v1_txt):
+                            try:
+                                with open(v1_txt, "r", encoding="utf-8") as f:
+                                    v1_desc_default = f.read().strip()
+                            except Exception:
+                                pass
+                        def_t1 = (song_titles[0] if (song_titles and song_titles[0]) else Path(v1_path).stem)
+                        t1 = dual_upload_panel.dispatch_v1(
+                            v1_path,
+                            default_title=def_t1,
+                            default_desc=v1_desc_default,
+                            default_tags=[style_tag] if style_tag else ["Suno Music", "AI Music"]
+                        )
+                        if t1:
+                            tasks_to_upload.append(t1)
+                            ch1_name = t1.get("channel_name") or dual_upload_panel.v1_section.ch_menu.get()
+                            _log_console(f"🚀 [DIRECT UPLOAD] Video 1 queued specifically for '{ch1_name}'!")
+
+                # 2. Video 2 (Track 2) Direct Upload Check
+                if v2_path and os.path.exists(v2_path) and dual_upload_panel and hasattr(dual_upload_panel, "v2_section"):
+                    if dual_upload_panel.v2_section.upload_enabled_var.get():
+                        v2_desc_default = ""
+                        if v2_txt and os.path.exists(v2_txt):
+                            try:
+                                with open(v2_txt, "r", encoding="utf-8") as f:
+                                    v2_desc_default = f.read().strip()
+                            except Exception:
+                                pass
+                        def_t2 = ((song_titles[0] + " (Variation 2)") if (song_titles and song_titles[0]) else Path(v2_path).stem)
+                        t2 = dual_upload_panel.dispatch_v2(
+                            v2_path,
+                            default_title=def_t2,
+                            default_desc=v2_desc_default,
+                            default_tags=[style_tag] if style_tag else ["Suno Music", "AI Music"]
+                        )
+                        if t2:
+                            tasks_to_upload.append(t2)
+                            ch2_name = t2.get("channel_name") or dual_upload_panel.v2_section.ch_menu.get()
+                            _log_console(f"🚀 [DIRECT UPLOAD] Video 2 queued specifically for '{ch2_name}'!")
+
                 chosen_vid = v1_path if (v1_path and os.path.exists(v1_path)) else v2_path
                 if chosen_vid and os.path.exists(chosen_vid):
                     setattr(container, "_last_rendered_video", chosen_vid)
+
+                if tasks_to_upload:
+                    # Switch to Queue tab so user sees the upload in progress immediately
                     try:
-                        import master_queue
-                        master_queue.register_rendered_video(
-                            chosen_vid,
-                            title=f"Bulk Studio: {Path(chosen_vid).stem}",
-                            tool_name="Bulk Video Studio"
-                        )
-                    except Exception as e:
-                        print(f"[BULK_STUDIO] Master queue error: {e}")
-                elif folder_path and os.path.exists(folder_path):
-                    try:
-                        os.startfile(folder_path)
+                        mon_tabview.set("🎵 Song Queue")
                     except Exception:
                         pass
+
+                    _log_console(f"🚀 Queued {len(tasks_to_upload)} video(s) for YouTube Direct Upload! Initializing live queue cards...")
+
+                    # ── BUILD DIRECT UPLOAD CARDS IN STUDIO QUEUE ──
+                    u_hdr = ctk.CTkFrame(queue_scroll, fg_color="#0e1726", corner_radius=8, border_width=1, border_color="#1e3a5f")
+                    u_hdr.pack(fill="x", pady=(14, 6), ipady=3)
+                    ctk.CTkLabel(
+                        u_hdr,
+                        text=f"🚀 Direct YouTube Upload Queue ({len(tasks_to_upload)} Video{'s' if len(tasks_to_upload) > 1 else ''})",
+                        font=FONTS["body_bold"],
+                        text_color="#38bdf8"
+                    ).pack(side="left", padx=12, pady=4)
+
+                    u_status_summary = ctk.CTkLabel(
+                        u_hdr,
+                        text="⏳ Transfer in Progress...",
+                        font=FONTS["small_bold"],
+                        text_color="#f59e0b"
+                    )
+                    u_status_summary.pack(side="right", padx=12, pady=4)
+
+                    studio_upload_cards = []
+                    for u_idx, task in enumerate(tasks_to_upload):
+                        u_card = ctk.CTkFrame(queue_scroll, fg_color=THEME["card"], corner_radius=10, border_width=1, border_color=THEME["card_border"])
+                        u_card.pack(fill="x", pady=5, ipady=4)
+                        u_card.grid_columnconfigure(1, weight=1)
+
+                        var_lbl = task.get("variation_label") or f"Video {u_idx+1}"
+                        t_title = task.get("title") or f"Song {u_idx+1}"
+                        ch_name = task.get("channel_name") or "YouTube Channel"
+                        fsize = task.get("file_size", 0)
+                        tot_mb = fsize / (1024 * 1024) if fsize else 0.0
+
+                        st_pill = ctk.CTkLabel(
+                            u_card,
+                            text="⏳ In Queue",
+                            font=FONTS["body_bold"],
+                            text_color=THEME["warning"],
+                            fg_color="#332200",
+                            corner_radius=6,
+                            padx=8,
+                            pady=2
+                        )
+                        st_pill.grid(row=0, column=0, padx=10, pady=10, sticky="n")
+
+                        info_box = ctk.CTkFrame(u_card, fg_color="transparent")
+                        info_box.grid(row=0, column=1, sticky="ew", padx=6, pady=6)
+
+                        title_row = ctk.CTkFrame(info_box, fg_color="transparent")
+                        title_row.pack(fill="x")
+
+                        disp_txt = f"🎬 {var_lbl}: {t_title}"
+                        if len(disp_txt) > 46:
+                            disp_txt = disp_txt[:44] + "..."
+                        ctk.CTkLabel(title_row, text=disp_txt, font=FONTS["body_bold"], text_color=THEME["text"], anchor="w").pack(side="left")
+
+                        ctk.CTkLabel(
+                            title_row,
+                            text=f"📺 {ch_name[:24]}",
+                            font=FONTS["small_bold"],
+                            text_color="#38bdf8",
+                            fg_color="#14243b",
+                            corner_radius=4,
+                            padx=8,
+                            pady=2
+                        ).pack(side="right")
+
+                        p_bar = ctk.CTkProgressBar(info_box, height=8, progress_color=THEME["accent"], fg_color="#121622")
+                        p_bar.pack(fill="x", pady=(6, 4))
+                        p_bar.set(0)
+
+                        stats_frame = ctk.CTkFrame(info_box, fg_color="transparent")
+                        stats_frame.pack(fill="x")
+
+                        lbl_spd = ctk.CTkLabel(stats_frame, text="⚡ Speed: 0.00 MB/s", font=FONTS["small_bold"], text_color="#38bdf8")
+                        lbl_spd.pack(side="left")
+
+                        lbl_trans = ctk.CTkLabel(stats_frame, text=f"💾 0 MB / {tot_mb:.1f} MB (0%)", font=FONTS["small"], text_color=THEME["text_muted"])
+                        lbl_trans.pack(side="left", padx=16)
+
+                        lbl_eta = ctk.CTkLabel(stats_frame, text="⏱️ ETA: Calculating...", font=FONTS["small"], text_color="#cbd5e1")
+                        lbl_eta.pack(side="right")
+
+                        # Completion Box
+                        comp_box = ctk.CTkFrame(info_box, fg_color="#062e20", corner_radius=8, border_width=1, border_color="#047857")
+
+                        comp_status_lbl = ctk.CTkLabel(
+                            comp_box,
+                            text="✅ Uploaded Successfully to YouTube!",
+                            font=FONTS["body_bold"],
+                            text_color="#34d399",
+                            anchor="w"
+                        )
+                        comp_status_lbl.pack(fill="x", padx=8, pady=(6, 2))
+
+                        comp_metrics_lbl = ctk.CTkLabel(
+                            comp_box,
+                            text="",
+                            font=FONTS["small_bold"],
+                            text_color="#a7f3d0",
+                            anchor="w"
+                        )
+                        comp_metrics_lbl.pack(fill="x", padx=8, pady=(2, 6))
+
+                        link_row = ctk.CTkFrame(comp_box, fg_color="transparent")
+                        link_row.pack(fill="x", padx=8, pady=(0, 6))
+
+                        link_ent = ctk.CTkEntry(
+                            link_row,
+                            height=26,
+                            font=FONTS["small"],
+                            fg_color="#071410",
+                            border_color="#047857",
+                            text_color="#34d399"
+                        )
+                        link_ent.pack(side="left", fill="x", expand=True, padx=(0, 6))
+
+                        btn_c = ctk.CTkButton(
+                            link_row,
+                            text="📋 Copy Link",
+                            width=85,
+                            height=26,
+                            font=FONTS["small_bold"],
+                            fg_color="#2563eb",
+                            hover_color="#1d4ed8"
+                        )
+                        btn_c.pack(side="right", padx=2)
+
+                        btn_w = ctk.CTkButton(
+                            link_row,
+                            text="🌐 Watch",
+                            width=65,
+                            height=26,
+                            font=FONTS["small_bold"],
+                            fg_color="#059669",
+                            hover_color="#047857"
+                        )
+                        btn_w.pack(side="right", padx=2)
+
+                        studio_upload_cards.append({
+                            "card": u_card,
+                            "st_pill": st_pill,
+                            "p_bar": p_bar,
+                            "lbl_spd": lbl_spd,
+                            "lbl_trans": lbl_trans,
+                            "lbl_eta": lbl_eta,
+                            "comp_box": comp_box,
+                            "comp_status_lbl": comp_status_lbl,
+                            "comp_metrics_lbl": comp_metrics_lbl,
+                            "link_ent": link_ent,
+                            "btn_c": btn_c,
+                            "btn_w": btn_w
+                        })
+
+                    # Register to Universal Master Queue
+                    try:
+                        import master_queue
+                        if v1_path and os.path.exists(v1_path):
+                            def_t1 = (song_titles[0] if (song_titles and song_titles[0]) else Path(v1_path).stem)
+                            master_queue.register_rendered_video(
+                                video_path=v1_path,
+                                title=f"Bulk Studio: {def_t1}",
+                                tool_name="Bulk Video Studio",
+                                show_popup=False
+                            )
+                            _log_console(f"🗂️ Video 1 registered in Universal Master Queue: {Path(v1_path).name}")
+
+                        if v2_path and os.path.exists(v2_path):
+                            def_t2 = ((song_titles[0] + " (Variation 2)") if (song_titles and song_titles[0]) else Path(v2_path).stem)
+                            master_queue.register_rendered_video(
+                                video_path=v2_path,
+                                title=f"Bulk Studio: {def_t2}",
+                                tool_name="Bulk Video Studio",
+                                show_popup=False
+                            )
+                            _log_console(f"🗂️ Video 2 registered in Universal Master Queue: {Path(v2_path).name}")
+                    except Exception as mq_ex:
+                        print(f"[MasterQueue] Notice: {mq_ex}")
+
+                    def _switch_to_master_queue():
+                        curr = container
+                        while curr:
+                            if hasattr(curr, "set") and hasattr(curr, "_tab_dict"):
+                                for t_key in getattr(curr, "_tab_dict", {}).keys():
+                                    if "Queue" in t_key or "queue" in t_key.lower():
+                                        try:
+                                            curr.set(t_key)
+                                            return True
+                                        except Exception:
+                                            pass
+                            curr = getattr(curr, "master", None)
+                        try:
+                            top = container.winfo_toplevel()
+                            def _find_and_switch(widget):
+                                if hasattr(widget, "set") and hasattr(widget, "_tab_dict"):
+                                    for t_key in widget._tab_dict.keys():
+                                        if "Queue" in t_key or "queue" in t_key.lower():
+                                            widget.set(t_key)
+                                            return True
+                                for ch in getattr(widget, "winfo_children", lambda: [])():
+                                    if _find_and_switch(ch):
+                                        return True
+                                return False
+                            _find_and_switch(top)
+                        except Exception:
+                            pass
+                        return False
+
+                    btn_master_queue = ctk.CTkButton(
+                        u_hdr,
+                        text="🗂 Go to Master Queue",
+                        width=145,
+                        height=26,
+                        font=FONTS["small_bold"],
+                        fg_color="#6d28d9",
+                        hover_color="#5b21b6",
+                        command=_switch_to_master_queue
+                    )
+                    btn_master_queue.pack(side="right", padx=(4, 6), pady=4)
+
+                    # Floating monitor opener button
+                    def _open_floating_monitor():
+                        top = container.winfo_toplevel()
+                        try:
+                            from uploader_engine.pre_render_upload_ui import LiveUploadProgressDialog
+                            LiveUploadProgressDialog(
+                                top,
+                                tasks_to_upload,
+                                on_complete_callback=_on_studio_all_complete,
+                                on_progress_callback=_on_studio_upload_progress,
+                                on_task_done_callback=_on_studio_task_done
+                            )
+                        except Exception as ex:
+                            _log_console(f"⚠️ Live Dialog Notice: {ex}")
+
+                    btn_open_mon = ctk.CTkButton(
+                        u_hdr,
+                        text="🔍 Monitor Window",
+                        width=115,
+                        height=26,
+                        font=FONTS["small_bold"],
+                        fg_color="#1e293b",
+                        hover_color="#334155",
+                        command=_open_floating_monitor
+                    )
+                    btn_open_mon.pack(side="right", padx=(4, 4), pady=4)
+
+                    # Callback Handlers
+                    def _on_studio_upload_progress(t_idx, task_obj, pct, bytes_up, speed_mbps, eta_str=""):
+                        if t_idx < len(studio_upload_cards):
+                            uc = studio_upload_cards[t_idx]
+                            fsz = task_obj.get("file_size") or 0
+                            u_mb = bytes_up / (1024 * 1024)
+                            tot_mb = fsz / (1024 * 1024) if fsz else 0.0
+
+                            if not eta_str:
+                                rem = max(0, fsz - bytes_up)
+                                if speed_mbps > 0.05:
+                                    eta_sec = int(rem / (speed_mbps * 1024 * 1024))
+                                    eta_str = f"{eta_sec // 60}:{eta_sec % 60:02d}"
+                                else:
+                                    eta_str = "--:--"
+
+                            def _u(p=pct, s=speed_mbps, u=u_mb, t=tot_mb, e=eta_str, card_d=uc):
+                                card_d["p_bar"].set(max(0.01, min(1.0, p / 100.0)))
+                                card_d["st_pill"].configure(text="⚡ Uploading...", text_color="#38bdf8", fg_color="#0c2e4e")
+                                card_d["lbl_spd"].configure(text=f"⚡ Speed: {s:.2f} MB/s")
+                                card_d["lbl_trans"].configure(text=f"💾 {u:.1f} MB / {t:.1f} MB ({p:.1f}%)")
+                                card_d["lbl_eta"].configure(text=f"⏱️ ETA: {e}")
+                            container.after(0, _u)
+
+                    def _on_studio_task_done(t_idx, task_obj, is_success, watch_url, err_msg):
+                        if t_idx < len(studio_upload_cards):
+                            uc = studio_upload_cards[t_idx]
+                            def _d():
+                                if is_success:
+                                    if "btn_retry" in uc:
+                                        try:
+                                            uc["btn_retry"].destroy()
+                                            del uc["btn_retry"]
+                                        except Exception:
+                                            pass
+                                    uc["p_bar"].set(1.0)
+                                    uc["p_bar"].configure(progress_color="#10b981")
+                                    uc["st_pill"].configure(text="✅ Upload Successful!", text_color="#34d399", fg_color="#064e3b")
+                                    uc["lbl_spd"].configure(text="⚡ Complete!")
+                                    uc["lbl_eta"].configure(text="🎉 Live on YouTube")
+
+                                    dur = task_obj.get("video_duration_str") or "N/A"
+                                    sz_mb = (task_obj.get("file_size") or 0) / (1024 * 1024)
+                                    upt = task_obj.get("upload_time_seconds", 0)
+                                    avg_spd = task_obj.get("average_speed_mbps", 0.0)
+
+                                    uc["comp_metrics_lbl"].configure(
+                                        text=f"⏱️ Video Duration: {dur}   |   💾 Size: {sz_mb:.1f} MB   |   ⚡ Upload Time: {upt}s (Avg {avg_spd:.2f} MB/s)"
+                                    )
+                                    uc["link_ent"].delete(0, "end")
+                                    uc["link_ent"].insert(0, watch_url)
+
+                                    def _copy_url(u=watch_url, b=uc["btn_c"]):
+                                        try:
+                                            container.clipboard_clear()
+                                            container.clipboard_append(u)
+                                            b.configure(text="✅ Copied!", fg_color="#059669")
+                                            container.after(1500, lambda: b.configure(text="📋 Copy Link", fg_color="#2563eb"))
+                                        except Exception:
+                                            pass
+
+                                    def _open_url(u=watch_url):
+                                        import webbrowser
+                                        webbrowser.open(u)
+
+                                    uc["btn_c"].configure(command=_copy_url)
+                                    uc["btn_w"].configure(command=_open_url)
+                                    uc["comp_box"].pack(fill="x", pady=(6, 0))
+
+                                    _log_console(
+                                        f"🎉 [DIRECT UPLOAD] ✅ {task_obj.get('variation_label')}: Upload Successful!\n"
+                                        f"    ⏱️ Duration: {dur} | 💾 Size: {sz_mb:.1f} MB | ⚡ Upload Time: {upt}s (Avg {avg_spd:.2f} MB/s)\n"
+                                        f"    🔗 Watch URL: {watch_url}"
+                                    )
+                                else:
+                                    uc["p_bar"].configure(progress_color="#ef4444")
+                                    uc["st_pill"].configure(text="❌ Failed", text_color="#ef4444", fg_color="#3b0f15")
+                                    uc["lbl_eta"].configure(text=f"Error: {err_msg[:38]}")
+                                    _log_console(f"❌ [DIRECT UPLOAD] {task_obj.get('variation_label')} upload failed: {err_msg}")
+
+                                    # Retry Button on Failed Card
+                                    if "btn_retry" not in uc:
+                                        def _do_retry(i=t_idx, t=task_obj):
+                                            threading.Thread(target=lambda: _upload_single_task_worker(i, t), daemon=True).start()
+
+                                        btn_retry = ctk.CTkButton(
+                                            uc["card"],
+                                            text="🔄 Retry Upload",
+                                            width=110,
+                                            height=26,
+                                            font=FONTS["small_bold"],
+                                            fg_color="#dc2626",
+                                            hover_color="#b91c1c",
+                                            command=_do_retry
+                                        )
+                                        btn_retry.grid(row=0, column=2, padx=10, pady=10)
+                                        uc["btn_retry"] = btn_retry
+                            container.after(0, _d)
+
+                    def _on_studio_all_complete(success_cnt):
+                        def _a():
+                            if success_cnt == len(tasks_to_upload):
+                                u_status_summary.configure(text=f"🎉 All {success_cnt} Uploaded Successfully!", text_color="#34d399")
+                                _update_step(6, 100, f"✅ PIPELINE & YOUTUBE UPLOAD COMPLETE! All {success_cnt} Videos Published!", 1.0)
+                            else:
+                                u_status_summary.configure(text=f"⚠️ {success_cnt} of {len(tasks_to_upload)} Uploaded", text_color="#f59e0b")
+                        container.after(0, _a)
+
+                    # Worker function for a single upload task
+                    def _upload_single_task_worker(idx, task):
+                        task_id = task.get("id")
+                        channel_id = task.get("channel_id")
+                        video_path = task.get("video_path")
+                        fsize = task.get("file_size") or (os.path.getsize(video_path) if (video_path and os.path.exists(video_path)) else 0)
+
+                        if idx < len(studio_upload_cards):
+                            uc = studio_upload_cards[idx]
+                            container.after(0, lambda u=uc: (
+                                u["st_pill"].configure(text="⚡ Uploading...", text_color="#38bdf8", fg_color="#0c2e4e"),
+                                u["p_bar"].configure(progress_color=THEME["accent"])
+                            ))
+
+                        try:
+                            from uploader_engine.auth import get_authenticated_youtube_service
+                            from uploader_engine.uploader import perform_video_upload
+                            from uploader_engine.database import db_update_task_status, db_update_task_progress
+
+                            db_update_task_status(task_id, "uploading")
+                            youtube = get_authenticated_youtube_service(channel_id)
+
+                            def _prog(pct, bytes_up, speed_mbps):
+                                _on_studio_upload_progress(idx, task, pct, bytes_up, speed_mbps)
+                                try:
+                                    db_update_task_progress(task_id, pct, bytes_up, speed_mbps)
+                                except Exception:
+                                    pass
+
+                            video_id = perform_video_upload(youtube, task, _prog)
+                            watch_url = f"https://youtu.be/{video_id}"
+                            task["watch_url"] = watch_url
+                            task["youtube_video_id"] = video_id
+                            try:
+                                db_update_task_status(task_id, "completed", youtube_id=video_id)
+                            except Exception:
+                                pass
+                            _on_studio_task_done(idx, task, True, watch_url, "")
+                            return True
+                        except Exception as ex:
+                            err_msg = str(ex)
+                            print(f"[StudioQueue] Upload error for {task.get('variation_label')}: {err_msg}")
+                            try:
+                                from uploader_engine.database import db_update_task_status
+                                db_update_task_status(task_id, "failed", error=err_msg)
+                            except Exception:
+                                pass
+                            _on_studio_task_done(idx, task, False, "", err_msg)
+                            return False
+
+                    completed_count = [0]
+                    def _check_all_finished():
+                        completed_count[0] += 1
+                        if completed_count[0] >= len(tasks_to_upload):
+                            success_cnt = sum(1 for t in tasks_to_upload if t.get("youtube_video_id"))
+                            _on_studio_all_complete(success_cnt)
+
+                    def _start_uploads_with_mode(chosen_mode: str):
+                        _log_console(f"🚀 Starting YouTube Upload Queue in [{chosen_mode.upper()}] mode...")
+
+                        if chosen_mode == "parallel":
+                            u_status_summary.configure(text="⚡ Parallel Upload Active (Both Streams)", text_color="#a855f7")
+                            for idx, task in enumerate(tasks_to_upload):
+                                def _worker(i=idx, t=task):
+                                    _upload_single_task_worker(i, t)
+                                    _check_all_finished()
+                                threading.Thread(target=_worker, daemon=True).start()
+                        else:
+                            # Sequential Queue
+                            u_status_summary.configure(text="📋 Sequential Queue Running...", text_color="#38bdf8")
+                            for idx in range(1, len(studio_upload_cards)):
+                                uc = studio_upload_cards[idx]
+                                uc["st_pill"].configure(text="⏳ In Queue (Waiting)", text_color="#94a3b8", fg_color="#1e293b")
+
+                            def _sequential_worker():
+                                for idx, task in enumerate(tasks_to_upload):
+                                    _upload_single_task_worker(idx, task)
+                                    _check_all_finished()
+                            threading.Thread(target=_sequential_worker, daemon=True).start()
+
+                    def _cancel_uploads():
+                        u_status_summary.configure(text="⏸️ Upload Cancelled", text_color="#ef4444")
+                        for uc in studio_upload_cards:
+                            uc["st_pill"].configure(text="⏸️ Cancelled", text_color="#94a3b8", fg_color="#1e293b")
+                        _log_console("Direct YouTube upload cancelled by user. Videos are saved locally.")
+
+                    # Show "Added to Queue" dialog with Sequential vs Parallel options
+                    top = container.winfo_toplevel()
+                    try:
+                        from uploader_engine.pre_render_upload_ui import QueueAddedDialog
+                        QueueAddedDialog(
+                            top,
+                            tasks_to_upload,
+                            on_start_callback=_start_uploads_with_mode,
+                            on_cancel_callback=_cancel_uploads
+                        )
+                    except Exception as ex:
+                        _log_console(f"⚠️ Dialog Notice: {ex}")
+                        # If dialog fails or user closes, auto-start in sequential queue
+                        _start_uploads_with_mode("sequential")
+                else:
+                    messagebox.showinfo(
+                        "Render Complete",
+                        f"✓ Videos rendered and saved locally successfully!\n\nFolder:\n{folder_path or (os.path.dirname(chosen_vid) if chosen_vid else '')}"
+                    )
         container.after(0, _f)
+
 
     def _add_card_buttons(card: ctk.CTkFrame, title: str, f1: str, f2: str):
         act_frame = ctk.CTkFrame(card, fg_color="transparent")
@@ -3303,16 +4040,26 @@ It speaks before I step inside!"""
     btn_start_3d.configure(command=_trigger_full_pipeline)
 
     def _show_alert(title: str, msg: str):
-        modal = ctk.CTkToplevel(container.winfo_toplevel())
-        modal.title(title)
-        modal.geometry("380x180")
-        modal.configure(fg_color=THEME["bg"])
-        modal.transient(container.winfo_toplevel())
-        modal.grab_set()
+        try:
+            top = container.winfo_toplevel()
+            modal = ctk.CTkToplevel(top)
+            modal.title(title)
+            modal.geometry("420x200")
+            modal.configure(fg_color=THEME["bg"])
+            modal.transient(top)
+            try:
+                modal.grab_set()
+            except Exception:
+                pass
+            modal.lift()
+            modal.focus_force()
 
-        ctk.CTkLabel(modal, text=title, font=FONTS["header"], text_color=THEME["danger"]).pack(pady=(20, 10))
-        ctk.CTkLabel(modal, text=msg, font=FONTS["body"], text_color=THEME["text"], wraplength=340).pack(pady=(0, 20))
-        ctk.CTkButton(modal, text="OK", width=100, fg_color=THEME["secondary_btn"], command=modal.destroy).pack()
+            ctk.CTkLabel(modal, text=title, font=FONTS["header"], text_color=THEME["danger"]).pack(pady=(16, 8))
+            ctk.CTkLabel(modal, text=msg, font=FONTS["body"], text_color=THEME["text"], wraplength=380).pack(pady=(0, 16))
+            ctk.CTkButton(modal, text="OK", width=100, fg_color=THEME["btn_indigo"], hover_color=THEME["btn_indigo_hover"], command=modal.destroy).pack()
+        except Exception:
+            from tkinter import messagebox
+            messagebox.showwarning(title, msg)
 
     _update_lyrics_detailing()
 
