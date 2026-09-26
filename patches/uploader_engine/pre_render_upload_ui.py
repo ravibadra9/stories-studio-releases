@@ -77,12 +77,20 @@ class PreRenderUploadSection(ctk.CTkFrame):
         accent_color: str = "#ff0033",
         default_enabled: bool = False,
         on_channel_change: Optional[Callable[[str], None]] = None,
+        title: Optional[str] = None,
+        default_privacy: str = "public",
+        default_tags: Optional[Any] = None,
         **kwargs
     ):
-        super().__init__(parent, fg_color="#0f1523", corner_radius=12, border_width=1, border_color="#243049", **kwargs)
+        frame_kwargs = {k: v for k, v in kwargs.items() if k in (
+            "width", "height", "fg_color", "border_color", "border_width",
+            "corner_radius", "bg_color"
+        )}
+        super().__init__(parent, fg_color="#0f1523", corner_radius=12, border_width=1, border_color="#243049", **frame_kwargs)
         self.variation_label = variation_label
         self.accent_color = accent_color
         self.on_channel_change = on_channel_change
+        self.section_title = title
 
         self.channel_map = {}
         self.id_to_name = {}
@@ -90,9 +98,11 @@ class PreRenderUploadSection(ctk.CTkFrame):
 
         # State Variables
         self.upload_enabled_var = ctk.BooleanVar(value=default_enabled)
-        self.privacy_var = ctk.StringVar(value="public")
+        self.privacy_var = ctk.StringVar(value=default_privacy or "public")
         self.title_var = ctk.StringVar(value="")
-        self.tags_var = ctk.StringVar(value="")
+
+        tags_str = ", ".join(default_tags) if isinstance(default_tags, (list, tuple)) else str(default_tags or "")
+        self.tags_var = ctk.StringVar(value=tags_str)
         self.thumb_path_var = ctk.StringVar(value="")
         self.schedule_data = {
             "display_str": "",
@@ -110,9 +120,13 @@ class PreRenderUploadSection(ctk.CTkFrame):
         hdr_frame = ctk.CTkFrame(self, fg_color="#172033", corner_radius=8)
         hdr_frame.pack(fill="x", padx=10, pady=(10, 6))
 
+        chk_text = self.section_title or f"Auto-Upload {self.variation_label} to YouTube (Direct upon Render)"
+        if not chk_text.startswith("📤") and not chk_text.startswith("🚀"):
+            chk_text = f"📤 {chk_text}"
+
         self.chk_upload = ctk.CTkCheckBox(
             hdr_frame,
-            text=f"📤 Auto-Upload {self.variation_label} to YouTube (Direct upon Render)",
+            text=chk_text,
             variable=self.upload_enabled_var,
             command=self._on_toggle_enabled,
             font=ctk.CTkFont(size=12, weight="bold"),
