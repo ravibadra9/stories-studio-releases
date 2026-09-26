@@ -46,6 +46,15 @@ import math as _math
 from PIL import Image,ImageDraw,ImageFont,ImageFilter,ImageChops
 import preset_manager
 
+try:
+    from uploader_engine.pre_render_upload_ui import PreRenderUploadSection
+except Exception:
+    try:
+        import importlib
+        PreRenderUploadSection = getattr(importlib.import_module("uploader_engine.pre_render_upload_ui"), "PreRenderUploadSection", None)
+    except Exception:
+        PreRenderUploadSection = None
+
 _APP_DATA_DIR=Path(os.environ.get("LOCALAPPDATA",os.path.expanduser("~")))/"StoriesStudio"
 TEMP_DIR=_APP_DATA_DIR/"temp_work"/"song_video_maker"
 OUTPUT_DIR=Path(os.path.expanduser("~"))/"Downloads"/"StoriesStudio_Output"/"SongVideoMaker"
@@ -2403,6 +2412,31 @@ def _build_video_maker(frame):
             _beep()
 
             def _show_done():
+                upload_sec = ui.get("upload_sec")
+                if upload_sec and upload_sec.upload_enabled_var.get():
+                    title_txt = os.path.splitext(os.path.basename(out_path))[0]
+                    ts_content = ""
+                    try:
+                        if os.path.exists(tp):
+                            with open(tp, "r", encoding="utf-8") as f:
+                                ts_content = f.read().strip()
+                    except Exception:
+                        pass
+                    task_id = upload_sec.dispatch_upload(
+                        video_path=out_path,
+                        default_title=title_txt,
+                        default_desc=ts_content,
+                        default_thumb=thumb_path or ""
+                    )
+                    if task_id:
+                        ch_name = upload_sec.ch_menu.get()
+                        messagebox.showinfo("Done \U0001F389",
+                            f"\u2705 Video created!\n\n\u23F1 {took}\n\U0001F3AC {fhms(ta)}\n\u26A1 {enc}\n"
+                            f"\U0001F3B5 {len(songs)} songs\n\U0001F501 {lp}x loop\n\n"
+                            f"\U0001F680 Directly queued for YouTube upload to:\n{ch_name}\n\n{out_path}"
+                            +(f"\n\U0001F5BC {thumb_path}" if thumb_path else ""))
+                        return
+
                 try:
                     import master_queue
                     title_txt = os.path.splitext(os.path.basename(out_path))[0]
@@ -2866,6 +2900,18 @@ def _build_video_maker(frame):
         ctk.CTkEntry(dr,textvariable=odv,fg_color=BG_I,border_color=BC,text_color=T1,height=28).pack(side="left",fill="x",expand=True,padx=(0,4))
         ctk.CTkButton(dr,text="\U0001F4C2",width=40,fg_color=AB,hover_color="#2563eb",command=lambda:(lambda d:odv.set(d) if d else None)(filedialog.askdirectory(initialdir=odv.get()))).pack(side="left")
 
+    def C_UPLOAD(p):
+        c = _card(p, "📤  Direct YouTube Channel Upload (Pre-Render Setup)")
+        if PreRenderUploadSection:
+            ui["upload_sec"] = PreRenderUploadSection(
+                c,
+                variation_label="Song Video",
+                accent_color=AR
+            )
+            ui["upload_sec"].pack(fill="x", padx=4, pady=4)
+        else:
+            ctk.CTkLabel(c, text="Uploader module unavailable", text_color="#ef4444").pack(padx=4, pady=4)
+
     def _right(par):
         # ═══ Action bar — primary controls, lifted out of the side panel ═══
         ab=ctk.CTkFrame(par,fg_color=BG_C,corner_radius=12,border_width=1,border_color=BC)
@@ -2999,7 +3045,7 @@ def _build_video_maker(frame):
 
     C3(s_content); C1(s_content); C2(s_content); C0(s_content)
     C_THEME(s_style); C4(s_style);   C5(s_style);   C_GIF(s_style);   C6(s_style);   C_OV(s_style)
-    C7(s_out);     C8(s_out);     C_TH(s_out);   C_FF(s_out)
+    C7(s_out);     C8(s_out);     C_UPLOAD(s_out);     C_TH(s_out);   C_FF(s_out)
     C_PRESET(s_pre)
 
     # Queue sits with the render settings
