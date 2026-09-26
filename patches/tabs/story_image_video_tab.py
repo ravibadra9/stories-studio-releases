@@ -23,6 +23,15 @@ from tkinter import filedialog, messagebox
 import lazy_menu  # Win32 / TCL native menu limit fix
 import preset_manager
 
+try:
+    from uploader_engine.pre_render_upload_ui import PreRenderUploadSection
+except Exception:
+    try:
+        import importlib
+        PreRenderUploadSection = getattr(importlib.import_module("uploader_engine.pre_render_upload_ui"), "PreRenderUploadSection", None)
+    except Exception:
+        PreRenderUploadSection = None
+
 _SSL_CONTEXT: Optional[ssl.SSLContext] = None
 
 def _get_ssl_context() -> ssl.SSLContext:
@@ -622,6 +631,17 @@ class StoryImageVideoTab(ctk.CTkFrame):
         self.parallel_video_label.grid(row=5, column=2, padx=6)
 
         self.output_path_entry = self._file_row(c3, 6, "Output Video Path", self._choose_output_path, "Save path for final MP4 video")
+
+        # Direct YouTube Channel Upload (Pre-Render Setup)
+        if PreRenderUploadSection:
+            self.upload_section = PreRenderUploadSection(
+                exp_right,
+                variation_label="Story Video",
+                accent_color=C_PURPLE
+            )
+            self.upload_section.pack(fill="x", pady=4, padx=2)
+        else:
+            self.upload_section = None
 
         # Export Action & Progress Tracker Card
         c8 = ctk.CTkFrame(exp_right, fg_color=C_CARD, corner_radius=8, border_width=1, border_color=C_BORDER)
@@ -2053,6 +2073,21 @@ class StoryImageVideoTab(ctk.CTkFrame):
             auth_manager.record_video_export(tool_name="Story Image Video", file_path=out_path)
         except Exception:
             pass
+
+        # Check if pre-render direct YouTube upload is configured
+        if getattr(self, "upload_section", None) and self.upload_section.upload_enabled_var.get():
+            task_id = self.upload_section.dispatch_upload(
+                video_path=out_path,
+                default_title=f"Story Video — {Path(out_path).stem}",
+                default_desc=f"Created with Story Image Video — {Path(out_path).name}"
+            )
+            if task_id:
+                ch_name = self.upload_section.ch_menu.get()
+                messagebox.showinfo(
+                    "🎉 Direct Upload Complete",
+                    f"Story Image Video created successfully and queued directly for YouTube upload!\n\nTarget Channel: {ch_name}\n\nFile:\n{out_path}"
+                )
+                return
 
         # Trigger completion notification popup with chime sound & queue registration
         try:
