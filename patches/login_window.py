@@ -286,23 +286,25 @@ class LoginWindow:
         )
         hw_copy_btn.pack(side="right", padx=6)
 
-        # 👑 Super Admin Portal Button on Login Screen
-        admin_login_btn = ctk.CTkButton(
-            foot,
-            text="👑  Super Admin Portal (Users, License & HWID)",
-            width=360,
-            height=30,
-            corner_radius=8,
-            fg_color="#3b0764",
-            hover_color="#581c87",
-            border_width=1,
-            border_color="#c084fc",
-            text_color="#ffffff",
-            font=(T.FONT, 10, "bold"),
-            cursor="hand2",
-            command=self._open_admin,
-        )
-        admin_login_btn.pack(pady=(8, 0))
+        # 👑 Super Admin Portal Button on Login Screen (Strictly for 8949400100)
+        from auth_manager import is_current_user_admin
+        if is_current_user_admin():
+            admin_login_btn = ctk.CTkButton(
+                foot,
+                text="👑  Super Admin Portal (Users, License & HWID)",
+                width=360,
+                height=30,
+                corner_radius=8,
+                fg_color="#3b0764",
+                hover_color="#581c87",
+                border_width=1,
+                border_color="#c084fc",
+                text_color="#ffffff",
+                font=(T.FONT, 10, "bold"),
+                cursor="hand2",
+                command=self._open_admin,
+            )
+            admin_login_btn.pack(pady=(8, 0))
 
     # ══════════════════════════════════════════════════════
     # RIGHT CARD CONTAINER (DYNAMIC VIEW)
