@@ -21,6 +21,15 @@ import lazy_menu  # Win32 / TCL native menu limit fix
 import preset_manager
 
 try:
+    from uploader_engine.pre_render_upload_ui import PreRenderUploadSection
+except Exception:
+    try:
+        import importlib
+        PreRenderUploadSection = getattr(importlib.import_module("uploader_engine.pre_render_upload_ui"), "PreRenderUploadSection", None)
+    except Exception:
+        PreRenderUploadSection = None
+
+try:
     import customtkinter as ctk
 except ImportError as exc:
     raise SystemExit("Missing dependency. Run: pip install customtkinter") from exc
@@ -588,6 +597,18 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         self.bgm_volume.set(0.08)
         self.bgm_volume_label = ctk.CTkLabel(bgm_card, text="8%", width=45)
         self.bgm_volume_label.grid(row=7, column=2, padx=14)
+
+        # 5. Direct YouTube Channel Upload (Pre-Render Setup) Card
+        upload_card = self._section(right_col, "Direct YouTube Channel Upload (Pre-Render Setup)", badge_color="#EF4444", expanded=True)
+        if PreRenderUploadSection:
+            self.upload_section = PreRenderUploadSection(
+                upload_card,
+                variation_label="Recap Video",
+                accent_color="#EF4444"
+            )
+            self.upload_section.pack(fill="x", padx=8, pady=(4, 10))
+        else:
+            self.upload_section = None
 
         # ---------------------------------------------------------------------
         # BOTTOM ACTION & LOGS CARD
@@ -1768,6 +1789,22 @@ class RecapStudioTabFrame(ctk.CTkFrame):
             auth_manager.record_video_export(tool_name="Recap Studio", file_path=str(out))
         except Exception:
             pass
+
+        # Check if Pre-Render Direct YouTube Upload is configured
+        if getattr(self, "upload_section", None) and self.upload_section.upload_enabled_var.get():
+            task_id = self.upload_section.dispatch_upload(
+                video_path=str(out),
+                default_title=f"Recap Video — {Path(out).stem}",
+                default_desc=f"Generated with Recap Studio — {Path(out).name}"
+            )
+            if task_id:
+                ch_name = self.upload_section.ch_menu.get()
+                messagebox.showinfo(
+                    "🎉 Direct Upload Complete",
+                    f"Recap Video successfully created and queued directly for YouTube upload!\n\nTarget Channel: {ch_name}\n\nFile:\n{out}"
+                )
+                return
+
         try:
             import master_queue
             master_queue.register_rendered_video(video_path=str(out), title=f"Recap Studio — {Path(out).name}", tool_name="Recap Studio")
