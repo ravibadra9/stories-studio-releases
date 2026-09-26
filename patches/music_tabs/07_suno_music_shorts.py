@@ -1054,13 +1054,23 @@ def create(parent_frame, boot_data=None):
     all_cards.append(c_upload)
 
     if PreRenderUploadSection:
-        shorts_upload_section = PreRenderUploadSection(
-            c_upload.body,
-            title="🚀 YouTube Shorts Direct Upload",
-            variation_label="Shorts",
-            default_privacy="public",
-            default_tags=["#Shorts", "#YouTubeShorts", "#SunoMusic", "#ShortsVideo"]
-        )
+        try:
+            shorts_upload_section = PreRenderUploadSection(
+                c_upload.body,
+                title="🚀 YouTube Shorts Direct Upload",
+                variation_label="Shorts",
+                default_privacy="public",
+                default_tags=["#Shorts", "#YouTubeShorts", "#SunoMusic", "#ShortsVideo"],
+                accent_color="#e11d48",
+                default_enabled=False
+            )
+        except Exception:
+            shorts_upload_section = PreRenderUploadSection(
+                c_upload.body,
+                variation_label="Shorts",
+                accent_color="#e11d48",
+                default_enabled=False
+            )
     else:
         shorts_upload_section = None
         ctk.CTkLabel(c_upload.body, text="YouTube Direct Uploader Engine Attached.", font=FONTS["body_bold"], text_color="#38bdf8").pack(pady=10)
@@ -1219,7 +1229,7 @@ def create(parent_frame, boot_data=None):
         text="🚀  START SHORTS GENERATION & BATCH RENDER",
         color="magenta",
         height=52,
-        font=FONTS["title_large"],
+        font=FONTS.get("title_large", FONTS.get("title", ("Segoe UI", 16, "bold"))),
         command=lambda: threading.Thread(target=_trigger_shorts_pipeline, daemon=True).start()
     )
     btn_start_3d.pack(fill="x", padx=12, pady=(10, 20))
