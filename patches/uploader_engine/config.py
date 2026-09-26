@@ -33,4 +33,5 @@ YOUTUBE_SCOPES = [
     "https://www.googleapis.com/auth/userinfo.profile"
 ]
 
-UPLOAD_CHUNK_SIZE = 5 * 1024 * 1024  # 5 MB resumable chunks
+# 10 MB resumable chunks (40 * 256 KB) — optimal balance of high speed and resilience against SSL drops
+UPLOAD_CHUNK_SIZE = 10 * 1024 * 1024
