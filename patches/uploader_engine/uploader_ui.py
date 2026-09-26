@@ -542,6 +542,18 @@ class BulkVideoUploaderFrame(ctk.CTkFrame):
             fields_row = ctk.CTkFrame(card, fg_color="transparent")
             fields_row.pack(fill="x", padx=12, pady=(0, 10))
 
+            # Per-video channel selector
+            ch_names = [f"{c['title']} ({c.get('subscriber_count', 0):,} subs)" for c in self.channels]
+            ch_item_menu = ctk.CTkOptionMenu(fields_row, values=ch_names if ch_names else ["No channels"], width=180, height=28, fg_color="#182234")
+            curr_item_ch = item.get("channel_id")
+            matching_ch = [f"{c['title']} ({c.get('subscriber_count', 0):,} subs)" for c in self.channels if c["id"] == curr_item_ch]
+            if matching_ch:
+                ch_item_menu.set(matching_ch[0])
+            elif ch_names:
+                ch_item_menu.set(ch_names[0])
+            ch_item_menu.pack(side="left", padx=(0, 6))
+            item["widgets"]["channel_menu"] = ch_item_menu
+
             vis_menu = ctk.CTkOptionMenu(fields_row, values=["private", "unlisted", "public", "scheduled"], width=110, height=28, fg_color="#1e293b")
             vis_menu.set(item["privacy_status"])
             vis_menu.pack(side="left", padx=(0, 6))
@@ -604,9 +616,20 @@ class BulkVideoUploaderFrame(ctk.CTkFrame):
             privacy = w["privacy"].get() if "privacy" in w else item["privacy_status"]
             kids = bool(w["made_for_kids"].get()) if "made_for_kids" in w else False
 
+            # Individual channel selection per video card
+            item_ch = item.get("channel_id")
+            if "channel_menu" in w:
+                chosen_ch = w["channel_menu"].get()
+                for c in self.channels:
+                    cname = f"{c['title']} ({c.get('subscriber_count', 0):,} subs)"
+                    if chosen_ch in (cname, c.get("title"), c.get("id")):
+                        item_ch = c["id"]
+                        break
+            ch_for_task = item_ch or target_ch_id
+
             task_payload = {
                 "id": item["id"],
-                "channel_id": target_ch_id,
+                "channel_id": ch_for_task,
                 "video_path": item["video_path"],
                 "original_filename": item["original_filename"],
                 "file_size": item["file_size"],
@@ -623,6 +646,7 @@ class BulkVideoUploaderFrame(ctk.CTkFrame):
                 "status": "pending"
             }
             db_create_task(task_payload)
+
 
         count = len(self.staged_videos)
         self.upload_mode = mode
