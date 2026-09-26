@@ -390,6 +390,19 @@ def launch_app(root: Optional[ctk.CTk] = None, user_data: Optional[Dict[str, Any
     root._boot_data = boot_data
 
     create(frame, boot_data)
+
+    root.deiconify()
+    root.lift()
+    root.focus_force()
+
+    def _on_close():
+        try:
+            root.destroy()
+        except Exception:
+            pass
+        os._exit(0)
+
+    root.protocol("WM_DELETE_WINDOW", _on_close)
     root.mainloop()
 
 
