@@ -86,6 +86,12 @@ FFPROBE_BIN = find_binary("ffprobe")
 # ════════════════════════════════════════════════════════════════════════════════
 
 RESOLUTIONS = {
+    "1080x1920 Full HD (9:16 Shorts)": (1080, 1920),
+    "720x1280 HD (9:16 Shorts)": (720, 1280),
+    "2160x3840 4K (9:16 Shorts)": (2160, 3840),
+    "1080x1920": (1080, 1920),
+    "720x1280": (720, 1280),
+    "9:16": (1080, 1920),
     "720p HD (1280x720)": (1280, 720),
     "1080p Full HD (1920x1080)": (1920, 1080),
     "2K Quad HD (2560x1440)": (2560, 1440),
@@ -98,7 +104,7 @@ RESOLUTIONS = {
 }
 
 def parse_resolution(res_str: str) -> Tuple[int, int]:
-    """Parses resolution string like '1080p', '4k', '2K Quad HD (2560x1440)' -> (w, h)."""
+    """Parses resolution string like '1080p', '9:16', '1080x1920 Full HD (9:16 Shorts)' -> (w, h)."""
     if not res_str:
         return (1920, 1080)
     clean = res_str.strip()
@@ -108,6 +114,10 @@ def parse_resolution(res_str: str) -> Tuple[int, int]:
     for k, v in RESOLUTIONS.items():
         if k.lower() in lower:
             return v
+    if "9:16" in lower or "shorts" in lower or "1080x1920" in lower:
+        return (1080, 1920)
+    if "720x1280" in lower:
+        return (720, 1280)
     if "720" in lower:
         return (1280, 720)
     if "4k" in lower or "2160" in lower:
@@ -801,19 +811,36 @@ def render_dual_variant_video(
     shadow_filter = f":shadowcolor=0x000000@0.85:shadowx={sh_px}:shadowy={sh_px}:borderw={bw_px}:bordercolor=0x000000@0.7" if text_shadow else ""
 
     # Scaled Coordinates in Target Resolution
-    raw_bx, raw_by = banner_pos if banner_pos else (360, 50)
-    raw_lx, raw_ly = logo_pos if logo_pos else (1720, 50)
-    raw_tx, raw_ty = text_pos if text_pos else (60, 860)
-    raw_vx, raw_vy = viz_pos if viz_pos else (320, 960)
+    is_vertical = (target_h > target_w)
+    if is_vertical:
+        # 9:16 Vertical Shorts Layout
+        raw_bx, raw_by = banner_pos if banner_pos else (int((target_w - 600) / 2), int(70 * scale_factor))
+        raw_lx, raw_ly = logo_pos if logo_pos else (int(40 * scale_factor), int(70 * scale_factor))
+        raw_tx, raw_ty = text_pos if text_pos else (int((target_w - 900) / 2), int(target_h * 0.65))
+        raw_vx, raw_vy = viz_pos if viz_pos else (int((target_w - 880) / 2), int(target_h * 0.77))
+        bx = int(raw_bx)
+        by = int(raw_by)
+        lx = int(raw_lx)
+        ly = int(raw_ly)
+        tx = int(raw_tx)
+        ty = int(raw_ty)
+        vx = int(raw_vx)
+        vy = int(raw_vy)
+    else:
+        # Standard 16:9 Landscape Layout
+        raw_bx, raw_by = banner_pos if banner_pos else (360, 50)
+        raw_lx, raw_ly = logo_pos if logo_pos else (1720, 50)
+        raw_tx, raw_ty = text_pos if text_pos else (60, 860)
+        raw_vx, raw_vy = viz_pos if viz_pos else (320, 960)
 
-    bx = int(raw_bx * scale_factor)
-    by = int(raw_by * scale_factor)
-    lx = int(raw_lx * scale_factor)
-    ly = int(raw_ly * scale_factor)
-    tx = int(raw_tx * scale_factor)
-    ty = int(raw_ty * scale_factor)
-    vx = int(raw_vx * scale_factor)
-    vy = int(raw_vy * scale_factor)
+        bx = int(raw_bx * scale_factor)
+        by = int(raw_by * scale_factor)
+        lx = int(raw_lx * scale_factor)
+        ly = int(raw_ly * scale_factor)
+        tx = int(raw_tx * scale_factor)
+        ty = int(raw_ty * scale_factor)
+        vx = int(raw_vx * scale_factor)
+        vy = int(raw_vy * scale_factor)
 
     # Input index tracking for FFmpeg
     input_count = 2
