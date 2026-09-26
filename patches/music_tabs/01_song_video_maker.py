@@ -4079,7 +4079,11 @@ class YTAudioSplitter(ctk.CTkFrame):
                     err_out = str(ex)
                     last_err = err_out[-400:]
                     if "database is locked" in err_out or "Could not copy Chrome cookie" in err_out:
-                        self.after(0, lambda: self._log("Cookie database locked. Direct stream fallback...", ORANGE))
+                        self.after(0, lambda: self._log(
+                            "⚠  Browser cookie database is currently locked.\n"
+                            "👉 Falling back automatically to direct stream...",
+                            ORANGE
+                        ))
                     elif any(b in err_out.lower() for b in ["403", "forbidden", "bot"]):
                         self.after(0, lambda lbl=strat["label"]: self._log(
                             f"ℹ  Client throttled ({lbl}). Trying next fallback...",
@@ -4105,11 +4109,16 @@ class YTAudioSplitter(ctk.CTkFrame):
             dur_str = f", Duration: {format_duration(actual_dur)}" if actual_dur > 0 else ""
 
             if expected_dur > 60 and actual_dur > 0 and actual_dur < (expected_dur * 0.85):
-                trunc_msg = f"Incomplete Download: {format_duration(actual_dur)} of {format_duration(expected_dur)}. YouTube severed connection early."
+                trunc_msg = (
+                    f"⚠ Incomplete Audio Download!\n"
+                    f"Downloaded: {format_duration(actual_dur)} ({file_mb:.1f} MB)\n"
+                    f"Expected: {format_duration(expected_dur)}\n\n"
+                    f"YouTube severed the connection early! Click '📤 Upload Cookies (.txt)' to upload your cookies file."
+                )
                 self.after(0, lambda: self._log(trunc_msg, ORANGE))
                 self.after(0, lambda: messagebox.showwarning("Download Truncated", trunc_msg))
             else:
-                self.after(0, lambda: self._log(f"Complete Download: {short} ({file_mb:.1f} MB{dur_str})", GREEN))
+                self.after(0, lambda: self._log(f"✔  Complete Download: {short} ({file_mb:.1f} MB{dur_str})", GREEN))
 
             self.after(0, lambda: self.file_lbl.configure(text=f"{short[:40]} ({file_mb:.1f} MB)", text_color=GREEN))
             self.after(0, lambda: self._update_dl_progress(f"Download complete ({format_duration(actual_dur)}) — ready to split", 1.0))
