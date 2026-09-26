@@ -8,13 +8,13 @@ from tkinter import messagebox
 # Bulletproof imports with fallback
 try:
     from uploader_engine.database import (
-        db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_save_channel
+        db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_set_setting, db_save_channel
     )
     from uploader_engine.config import REDIRECT_URI
 except Exception:
     try:
         from .database import (
-            db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_save_channel
+            db_get_channels, db_create_task, db_get_tasks, db_get_setting, db_set_setting, db_save_channel
         )
         from .config import REDIRECT_URI
     except Exception:
@@ -364,6 +364,10 @@ def open_connect_channel_dialog(parent=None, on_success=None):
         generate_authorization_url, exchange_code_for_tokens,
         get_channel_profile_from_token, parse_auth_code
     )
+    try:
+        from uploader_engine.database import db_get_setting, db_set_setting
+    except Exception:
+        pass
 
     # Auto-sync Live Streamer accounts if available
     sync_live_streamer_accounts()
@@ -479,6 +483,10 @@ def open_connect_channel_dialog(parent=None, on_success=None):
                     return
                 state["client_id"] = cid
                 state["client_secret"] = csec
+                try:
+                    from uploader_engine.database import db_set_setting
+                except Exception:
+                    pass
                 db_set_setting("google_client_id", cid)
                 db_set_setting("google_client_secret", csec)
                 uris = cfg.get("redirect_uris", [])
@@ -850,9 +858,33 @@ def queue_video_for_upload(
     if not channels:
         raise ValueError("No YouTube channel connected! Please connect a channel first in 🚀 Bulk Video Uploader.")
 
-    target_channel_id = channel_id
-    if not target_channel_id or not any(c["id"] == target_channel_id for c in channels):
+    target_channel_id = None
+    if channel_id:
+        clean_target = str(channel_id).strip()
+        # 1. Exact ID
+        for c in channels:
+            if c.get("id") == clean_target:
+                target_channel_id = c["id"]
+                break
+        # 2. Custom URL
+        if not target_channel_id:
+            for c in channels:
+                if c.get("custom_url") and c["custom_url"].lower() == clean_target.lower():
+                    target_channel_id = c["id"]
+                    break
+        # 3. Exact Title or Formatted Display String match
+        if not target_channel_id:
+            for c in channels:
+                c_title = c.get("title", "").strip().lower()
+                c_fmt = f"{c.get('title', '')} ({c.get('subscriber_count', 0):,} subs)".lower()
+                clean_low = clean_target.lower()
+                if clean_low in (c_title, c_fmt) or c_title in clean_low or clean_low in c_title:
+                    target_channel_id = c["id"]
+                    break
+
+    if not target_channel_id:
         target_channel_id = channels[0]["id"]
+
 
     fname = os.path.basename(video_path)
     fsize = os.path.getsize(video_path)
