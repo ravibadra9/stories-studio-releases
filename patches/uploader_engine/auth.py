@@ -110,10 +110,23 @@ def get_channel_profile_from_token(access_token: str) -> Dict[str, Any]:
 def get_authenticated_youtube_service(channel_id: str):
     channel = db_get_channel_by_id(channel_id)
     if not channel:
-        raise ValueError(f"Channel not found: {channel_id}")
+        try:
+            from uploader_engine.database import db_get_channels
+            channels = db_get_channels()
+            clean_cid = str(channel_id).strip().lower()
+            for c in channels:
+                if c.get("id", "").lower() == clean_cid or c.get("title", "").strip().lower() == clean_cid:
+                    channel = c
+                    break
+        except Exception:
+            pass
+
+    if not channel:
+        raise ValueError(f"Channel not found in database for ID: {channel_id}")
     
-    client_id = channel.get("client_id")
-    client_secret = channel.get("client_secret")
+    from uploader_engine.database import db_get_setting
+    client_id = channel.get("client_id") or db_get_setting("google_client_id")
+    client_secret = channel.get("client_secret") or db_get_setting("google_client_secret")
     access_token = channel.get("access_token")
     refresh_token = channel.get("refresh_token")
     expiry_str = channel.get("token_expiry")
@@ -135,9 +148,12 @@ def get_authenticated_youtube_service(channel_id: str):
             access_token = refreshed["access_token"]
             channel["access_token"] = access_token
             channel["token_expiry"] = refreshed["token_expiry"]
+            channel["client_id"] = client_id
+            channel["client_secret"] = client_secret
             db_save_channel(channel)
         except Exception as e:
             print(f"Warning: Token refresh error: {e}")
+
             
     creds = Credentials(
         token=access_token,
