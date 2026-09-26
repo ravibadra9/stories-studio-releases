@@ -111,8 +111,12 @@ def db_get_channel_by_id(channel_id: str) -> Optional[Dict[str, Any]]:
     cur = conn.cursor()
     cur.execute("SELECT * FROM channels WHERE id = ?", (channel_id,))
     row = cur.fetchone()
+    if not row:
+        cur.execute("SELECT * FROM channels WHERE title = ? COLLATE NOCASE OR custom_url = ? COLLATE NOCASE", (channel_id, channel_id))
+        row = cur.fetchone()
     conn.close()
     return dict(row) if row else None
+
 
 def db_save_channel(channel_data: dict):
     conn = sqlite3.connect(DB_PATH)
