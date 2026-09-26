@@ -521,8 +521,9 @@ class StudioScrollableTabview(ctk.CTkFrame):
             "AI VIDEO STUDIOS": ["STORIES", "RECAP", "SUNO", "IMAGE TO VIDEO", "SHORTS"],
             "AUDIO & CREATIVE ENGINES": ["MUSIC", "RHYMES", "PRAYER", "SONG VIDEO"],
             "UTILITIES & CLOUD": ["QUEUE", "PROMPT", "CHARACTER", "FETCH", "SUFFIX", "LIVE STREAM"],
-            "👑 SUPER ADMIN": ["ADMIN"]
         }
+        if getattr(self, "_user_is_admin", False):
+            sections["👑 SUPER ADMIN"] = ["ADMIN"]
 
         created_sections = set()
         row_counter = 0
@@ -724,6 +725,10 @@ def mount_tabs(tabview, plugins: list[TabPlugin], boot_data: dict = None,
     from auth_manager import is_current_user_admin
     user_data = boot_data.get("user_data") if isinstance(boot_data, dict) else None
     user_is_admin = is_current_user_admin(user_data)
+    try:
+        tabview._user_is_admin = user_is_admin
+    except Exception:
+        pass
 
     filtered_plugins = []
     for p in plugins:
