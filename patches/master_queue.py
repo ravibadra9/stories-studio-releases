@@ -90,16 +90,23 @@ def show_video_completion_popup(parent=None, video_path: str = "", title: str = 
             except Exception as e:
                 print(f"[QUEUE] Open folder error: {e}")
 
+        title_var = ctk.StringVar(value=clean_title)
+        vis_var = ctk.StringVar(value="public")
+        schedule_data = {"publish_at_iso": None, "timezone_name": "", "display_str": ""}
+
     def _queue_upload(channel_id: Optional[str] = None):
         """Send video to YouTube upload queue."""
         try:
             from uploader_engine.api import queue_video_for_upload
             task_id = queue_video_for_upload(
                 video_path=video_path,
-                title=clean_title,
+                title=title_var.get().strip() or clean_title,
                 description=f"Rendered with {tool_name}",
                 channel_id=channel_id,
-                privacy_status="public"
+                privacy_status=vis_var.get(),
+                publish_at=schedule_data.get("publish_at_iso"),
+                scheduled_upload_time=schedule_data.get("publish_at_iso"),
+                timezone_name=schedule_data.get("timezone_name", "")
             )
             return task_id
         except Exception as e:
@@ -110,8 +117,8 @@ def show_video_completion_popup(parent=None, video_path: str = "", title: str = 
     try:
         top = ctk.CTkToplevel()
         top.title("🎉 Render Complete — Choose Action")
-        top.geometry("640x380")
-        top.minsize(580, 360)
+        top.geometry("660x440")
+        top.minsize(600, 400)
         top.configure(fg_color="#080c14")
         top.attributes("-topmost", True)
         top.focus_force()
@@ -121,19 +128,19 @@ def show_video_completion_popup(parent=None, video_path: str = "", title: str = 
 
         # Header Badge
         badge = ctk.CTkFrame(card, fg_color="#064e3b", corner_radius=10, border_width=1, border_color="#10b981")
-        badge.pack(pady=(14, 4))
+        badge.pack(pady=(12, 4))
         ctk.CTkLabel(badge, text="  ✓ RENDER COMPLETE • 100%  ", font=("Segoe UI", 10, "bold"), text_color="#34d399").pack(padx=8, pady=3)
 
         ctk.CTkLabel(card, text=f"✨ {title}", font=("Segoe UI", 15, "bold"), text_color="#f8fafc").pack(pady=(0, 2))
-        ctk.CTkLabel(card, text=f"📁 {fname}", font=("Consolas", 11), text_color="#94a3b8").pack(pady=(0, 10))
+        ctk.CTkLabel(card, text=f"📁 {fname}", font=("Consolas", 11), text_color="#94a3b8").pack(pady=(0, 8))
 
         # Channel Selector Frame
         ch_frame = ctk.CTkFrame(card, fg_color="#101726", corner_radius=10, border_width=1, border_color="#1e293b")
-        ch_frame.pack(fill="x", padx=16, pady=(0, 12))
+        ch_frame.pack(fill="x", padx=16, pady=(0, 8))
 
         ctk.CTkLabel(ch_frame, text="📺 YouTube Channel:", font=("Segoe UI", 11, "bold"), text_color="#38bdf8").pack(side="left", padx=(12, 6), pady=8)
 
-        ch_menu = ctk.CTkOptionMenu(ch_frame, values=["Loading..."], width=300, height=30, fg_color="#1e293b")
+        ch_menu = ctk.CTkOptionMenu(ch_frame, values=["Loading..."], width=280, height=30, fg_color="#1e293b")
         ch_menu.pack(side="left", fill="x", expand=True, padx=4, pady=8)
 
         ch_id_lookup = {}
@@ -169,6 +176,46 @@ def show_video_completion_popup(parent=None, video_path: str = "", title: str = 
         ).pack(side="right", padx=(4, 12), pady=8)
 
         refresh_channels()
+
+        # Visibility & Scheduling Row
+        vis_frame = ctk.CTkFrame(card, fg_color="#101726", corner_radius=10, border_width=1, border_color="#1e293b")
+        vis_frame.pack(fill="x", padx=16, pady=(0, 10))
+
+        ctk.CTkLabel(vis_frame, text="🔒 Visibility:", font=("Segoe UI", 11, "bold"), text_color="#cbd5e1").pack(side="left", padx=(12, 6), pady=8)
+
+        def open_sched_dialog():
+            try:
+                from uploader_engine.uploader_ui import CalendarTimezonePicker
+                def on_pick(data):
+                    schedule_data.update(data)
+                    vis_var.set("scheduled")
+                    disp = data.get("display_str", "")
+                    btn_sched.configure(text=f"📅 {disp[:28]}", fg_color="#059669")
+                CalendarTimezonePicker(top, on_select_callback=on_pick)
+            except Exception as ex:
+                print(f"[QUEUE] Schedule dialog error: {ex}")
+
+        def on_vis_select(val):
+            if val == "scheduled":
+                btn_sched.configure(fg_color="#d97706", hover_color="#b45309", text_color="#ffffff")
+                if not schedule_data.get("publish_at_iso"):
+                    open_sched_dialog()
+            else:
+                btn_sched.configure(fg_color="#1e293b", hover_color="#334155", text_color="#94a3b8")
+
+        vis_menu = ctk.CTkOptionMenu(
+            vis_frame, values=["public", "unlisted", "private", "scheduled"],
+            variable=vis_var, width=120, height=30, fg_color="#1e293b",
+            command=on_vis_select
+        )
+        vis_menu.pack(side="left", padx=(0, 6), pady=8)
+
+        btn_sched = ctk.CTkButton(
+            vis_frame, text="📅 Schedule Date & Timezone...", height=30,
+            fg_color="#1e293b", hover_color="#334155", font=("Segoe UI", 11),
+            command=open_sched_dialog
+        )
+        btn_sched.pack(side="left", fill="x", expand=True, padx=(4, 12), pady=8)
 
         # Prompt Text
         ctk.CTkLabel(
