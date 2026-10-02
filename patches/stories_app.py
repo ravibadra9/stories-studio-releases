@@ -553,8 +553,34 @@ def launch_app(root=None, user_data=None):
         ver = "dev"
 
     root.title(f"{TITLE} — v{ver}")
-    root.geometry("1450x800")
-    root.minsize(1200, 680)
+
+    try:
+        scr_w = root.winfo_screenwidth()
+        scr_h = root.winfo_screenheight()
+    except Exception:
+        scr_w, scr_h = 1920, 1080
+
+    is_small_display = (scr_w <= 1366 or scr_h <= 768)
+
+    if is_small_display:
+        root.minsize(960, 520)
+        try:
+            ctk.set_widget_scaling(0.88)
+        except Exception:
+            pass
+        target_w = min(1260, max(960, scr_w - 12))
+        target_h = min(680, max(520, scr_h - 60))
+        root.geometry(f"{target_w}x{target_h}+4+4")
+        try:
+            root.state("zoomed")
+        except Exception:
+            pass
+    else:
+        root.minsize(1050, 620)
+        target_w = min(1450, scr_w - 40)
+        target_h = min(800, scr_h - 80)
+        root.geometry(f"{target_w}x{target_h}+20+20")
+
     root.configure(fg_color=C["bg"])
 
     # App icon
