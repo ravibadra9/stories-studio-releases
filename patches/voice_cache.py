@@ -23,10 +23,6 @@ def _ensure_dir():
 def _load_cache():
     try:
         with open(_CACHE_FILE, "r", encoding="utf-8") as f:
-            data = json.load(f)
-            # Filter out legacy hardcoded invalid key
-            if data.get("api_key") == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-                data["api_key"] = ""
             return data
     except Exception:
         return {"api_key": "", "favorites": [], "recent_searches": []}
@@ -44,16 +40,12 @@ def _save_cache(data):
 def save_api_key(key: str):
     c = _load_cache()
     clean_k = key.strip() if key else ""
-    if clean_k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        clean_k = ""
     c["api_key"] = clean_k
     _save_cache(c)
 
 
 def load_api_key() -> str:
     key = _load_cache().get("api_key", "").strip()
-    if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        return ""
     return key
 
 
@@ -166,8 +158,6 @@ DEFAULT_FALLBACK_VOICES = [
 def load_voices_cached(api_key: Optional[str] = None, force_refresh: bool = False, provider_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetch voices via AI33Client across all supported providers with local JSON cache & resilient fallbacks."""
     key = (api_key or load_api_key() or "").strip()
-    if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        key = ""
 
     if not force_refresh and os.path.exists(_VOICE_LIST_CACHE_FILE):
         try:
@@ -259,7 +249,7 @@ def search_voices_async(api_key: Optional[str], query: str, callback, provider_f
 def validate_key(api_key: str) -> bool:
     """Quick check via /v3/voices endpoint."""
     key = (api_key or "").strip()
-    if not key or key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+    if not key:
         return False
     try:
         from ai33_api import AI33Client
