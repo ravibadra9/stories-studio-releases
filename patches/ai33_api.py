@@ -26,7 +26,7 @@ _DEFAULT_BASE_URL = "https://api.ai33.pro"
 _SSL_CONTEXT: Optional[ssl.SSLContext] = None
 
 
-DEFAULT_AI33_KEY = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+DEFAULT_AI33_KEY = ""
 
 
 _FEMALE_VOICE_NAMES = {
@@ -181,52 +181,55 @@ def ai33_tts_generate(
         prefixed_vid = f"{provider_prefix}{bare_vid}"
         clean_vid = bare_vid
 
-    key_to_use = api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or DEFAULT_AI33_KEY
+    key_to_use = (api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or "").strip()
+    if key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+        key_to_use = ""
 
     # Tier 1: AI33 v3 Endpoint
-    try:
-        client = AI33Client(api_key=key_to_use)
-        for attempt in range(1, 4):
-            try:
-                if log_fn and attempt > 1:
-                    log_fn(f"[ai33-v3] (Retry {attempt}/3) Requesting TTS for '{prefixed_vid}'...")
-                res = client.text_to_speech_v3(text=text.strip(), voice_id=prefixed_vid, speed=speed, model_id=model_id)
-                if isinstance(res, (bytes, bytearray)) and len(res) > 100:
-                    if out_path:
-                        with open(out_path, "wb") as f:
-                            f.write(res)
-                    if log_fn:
-                        log_fn(f"[ai33-v3] Generated {len(res)} bytes")
-                    return True
-                elif isinstance(res, dict):
-                    task_id = res.get("task_id")
-                    if task_id:
+    if key_to_use:
+        try:
+            client = AI33Client(api_key=key_to_use)
+            for attempt in range(1, 4):
+                try:
+                    if log_fn and attempt > 1:
+                        log_fn(f"[ai33-v3] (Retry {attempt}/3) Requesting TTS for '{prefixed_vid}'...")
+                    res = client.text_to_speech_v3(text=text.strip(), voice_id=prefixed_vid, speed=speed, model_id=model_id)
+                    if isinstance(res, (bytes, bytearray)) and len(res) > 100:
+                        if out_path:
+                            with open(out_path, "wb") as f:
+                                f.write(res)
                         if log_fn:
-                            log_fn(f"[ai33-v3] Task created: {task_id}. Polling (up to 90s)...")
-                        task_res = client.poll_task(task_id, timeout=90)
-                        meta = task_res.get("metadata", {}) if isinstance(task_res.get("metadata"), dict) else {}
-                        audio_url = meta.get("audio_url") or task_res.get("audio_url") or task_res.get("output_url") or task_res.get("url")
-                        if audio_url and out_path:
-                            client.download_file(audio_url, out_path)
-                            return True
-                    elif (res.get("audio_url") or res.get("url")) and out_path:
-                        client.download_file(res.get("audio_url") or res.get("url"), out_path)
+                            log_fn(f"[ai33-v3] Generated {len(res)} bytes")
                         return True
-            except AI33APIError as exc:
-                if (exc.status_code in (429, 503) or "queue" in str(exc).lower()) and attempt < 3:
-                    time.sleep(2.0 * attempt)
-                    continue
-                if attempt >= 3:
+                    elif isinstance(res, dict):
+                        task_id = res.get("task_id")
+                        if task_id:
+                            if log_fn:
+                                log_fn(f"[ai33-v3] Task created: {task_id}. Polling (up to 90s)...")
+                            task_res = client.poll_task(task_id, timeout=90)
+                            meta = task_res.get("metadata", {}) if isinstance(task_res.get("metadata"), dict) else {}
+                            audio_url = meta.get("audio_url") or task_res.get("audio_url") or task_res.get("output_url") or task_res.get("url")
+                            if audio_url and out_path:
+                                client.download_file(audio_url, out_path)
+                                return True
+                        elif (res.get("audio_url") or res.get("url")) and out_path:
+                            client.download_file(res.get("audio_url") or res.get("url"), out_path)
+                            return True
+                except AI33APIError as exc:
+                    if (exc.status_code in (429, 503) or "queue" in str(exc).lower()) and attempt < 3:
+                        time.sleep(2.0 * attempt)
+                        continue
+                    if attempt >= 3:
+                        break
+                except Exception as exc:
+                    err_text = str(exc).lower()
+                    is_retryable = any(kw in err_text for kw in ("timeout", "timed out", "queue", "rate", "429", "500", "502", "503", "504"))
+                    if is_retryable and attempt < 3:
+                        time.sleep(2.0 * attempt)
+                        continue
                     break
-            except Exception as exc:
-                err_text = str(exc).lower()
-                is_retryable = any(kw in err_text for kw in ("timeout", "timed out", "queue", "rate", "429", "500", "502", "503", "504"))
-                if is_retryable and attempt < 3:
-                    time.sleep(2.0 * attempt)
-                    continue
-                break
-    except Exception:
-        pass
+        except Exception:
+            pass
 
     # Tier 2: Direct ElevenLabs API (if custom user API key is configured)
     if key_to_use and key_to_use != DEFAULT_AI33_KEY:
@@ -334,15 +337,16 @@ class AI33Client:
     """Client for interacting with the AI33 Audio API."""
 
     def __init__(self, api_key: Optional[str] = None, base_url: str = _DEFAULT_BASE_URL, timeout: int = 120):
-        self.api_key = api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or os.getenv("ELEVENLABS_API_KEY") or DEFAULT_AI33_KEY
+        k = (api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or os.getenv("ELEVENLABS_API_KEY") or "").strip()
+        if k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            k = ""
+        self.api_key = k
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
 
     def _headers(self, content_type: Optional[str] = None) -> Dict[str, str]:
-        if not self.api_key:
-            self.api_key = DEFAULT_AI33_KEY
         headers = {
-            "xi-api-key": self.api_key,
+            "xi-api-key": self.api_key or "",
             "User-Agent": "AI33-Python-SDK/1.0",
         }
         if content_type:
@@ -458,7 +462,12 @@ class AI33Client:
         fetched_voices: List[Dict[str, Any]] = []
         seen_ids = set()
 
-        api_key_to_use = self.api_key or DEFAULT_AI33_KEY
+        api_key_to_use = (self.api_key or "").strip()
+        if api_key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            api_key_to_use = ""
+        if not api_key_to_use:
+            return []
+
         req_headers = {
             "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) StoriesStudio/2.8",
             "xi-api-key": api_key_to_use,
@@ -521,7 +530,7 @@ class AI33Client:
                     pass
 
         # Also fetch direct ElevenLabs voices if custom user key is set
-        if api_key_to_use and api_key_to_use != DEFAULT_AI33_KEY and not fast_mode:
+        if api_key_to_use and not fast_mode:
             try:
                 el_url = "https://api.elevenlabs.io/v1/voices"
                 el_headers = {"xi-api-key": api_key_to_use, "User-Agent": "StoriesStudio/2.8"}
