@@ -2752,7 +2752,10 @@ class VoiceSearchWindow(ctk.CTkToplevel):
             pp=os.path.join(TEMP_DIR,f"_voice_preview_{vid[:8]}.mp3")
             try:
                 from ai33_api import AI33Client
-                _ai33_c = AI33Client(api_key=self.api_key or os.getenv("AI33_API_KEY") or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
+                ak_val = ""
+                if hasattr(self, "api_entry") and hasattr(self.api_entry, "get"):
+                    ak_val = self.api_entry.get().strip()
+                _ai33_c = AI33Client(api_key=ak_val)
                 _res = _ai33_c.text_to_speech_v3(text="Hello, this is a voice preview test.", voice_id=vid)
                 if isinstance(_res, (bytes, bytearray)) and len(_res) > 500:
                     with open(pp, "wb") as f: f.write(_res)
@@ -3560,9 +3563,11 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         # Row 0: API Key + Fetch Voices
         kf=ctk.CTkFrame(api,fg_color="transparent"); kf.pack(fill="x",padx=5,pady=2)
         ctk.CTkLabel(kf,text="Key:",text_color=C["dim"],width=35).pack(side="left")
-        self.api_entry=ctk.CTkEntry(kf,show="*",fg_color=C["entry_bg"],text_color=C["text"],border_color=C["border"])
+        self.api_entry=ctk.CTkEntry(kf,show="*",placeholder_text="Paste AI33Pro Key (sk_...)",fg_color=C["entry_bg"],text_color=C["text"],border_color=C["border"])
         self.api_entry.pack(side="left",fill="x",expand=True,padx=5)
-        if self.settings.get("api_key"): self.api_entry.insert(0,self.settings.get("api_key"))
+        saved_k = self.settings.get("api_key") or ""
+        if saved_k and saved_k != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            self.api_entry.insert(0, saved_k)
         self.api_key = self.api_entry
         self._key_visible = False
         def _toggle_key():
@@ -4336,13 +4341,22 @@ class AdvanceEditorFrame(ctk.CTkFrame):
 
     # ── Voice Studio & TTS Engine Methods ──
     def _fetch_voices_threaded(self):
-        key = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+        key = ""
         try:
             if hasattr(self, "api_entry") and self.api_entry.winfo_exists():
                 val = self.api_entry.get().strip()
                 if val: key = val
         except Exception:
             pass
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
+        if not key:
+            if hasattr(self, "api_status"):
+                try: self.api_status.configure(text="⚠️ Please insert your AI33Pro API Key first!", text_color="#F59E0B")
+                except Exception: pass
+            if hasattr(self, "api_entry") and self.api_entry.winfo_exists():
+                self.api_entry.focus()
+            return
         if hasattr(self, "api_status"):
             try: self.api_status.configure(text="Fetching voices via AI33Pro v3...", text_color=C["accent"])
             except Exception: pass
@@ -4530,7 +4544,9 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
-        key = self.api_entry.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+        key = self.api_entry.get().strip() if hasattr(self, "api_entry") else ""
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
