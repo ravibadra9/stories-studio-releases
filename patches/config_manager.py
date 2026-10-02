@@ -6,7 +6,7 @@ import json
 import os
 from pathlib import Path
 
-DEFAULT_API_KEY = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+DEFAULT_API_KEY = ""
 
 def get_config_dir() -> Path:
     app_data = os.getenv("LOCALAPPDATA", os.path.expanduser("~"))
@@ -36,6 +36,9 @@ def load_config() -> dict:
     try:
         with open(CONFIG_FILE, "r", encoding="utf-8") as f:
             data = json.load(f)
+            # Filter out legacy hardcoded invalid key
+            if data.get("api_key") == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+                data["api_key"] = ""
             # Merge with defaults for missing keys
             for k, v in DEFAULT_SETTINGS.items():
                 if k not in data:
