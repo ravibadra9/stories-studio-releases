@@ -370,8 +370,36 @@ def launch_app(root: Optional[ctk.CTk] = None, user_data: Optional[Dict[str, Any
         root.resizable(True, True)
 
     root.title(f"{TITLE} — v{APP_VERSION}")
-    root.geometry("1450x850")
-    root.minsize(1100, 700)
+
+    # ── Auto-Responsive Screen Detection (1280x720 / 1k Display Adaptation) ──
+    try:
+        root.update_idletasks()
+        screen_w = root.winfo_screenwidth()
+        screen_h = root.winfo_screenheight()
+    except Exception:
+        screen_w, screen_h = 1920, 1080
+
+    is_small_display = (screen_w <= 1366 or screen_h <= 768)
+
+    if is_small_display:
+        root.minsize(960, 520)
+        try:
+            ctk.set_widget_scaling(0.88)
+        except Exception:
+            pass
+        target_w = min(1260, max(960, screen_w - 12))
+        target_h = min(680, max(520, screen_h - 60))
+        root.geometry(f"{target_w}x{target_h}+4+4")
+        try:
+            root.state("zoomed")  # Auto-maximize to fill screen cleanly on 720p/1k
+        except Exception:
+            pass
+    else:
+        root.minsize(1024, 600)
+        target_w = min(1450, screen_w - 40)
+        target_h = min(850, screen_h - 80)
+        root.geometry(f"{target_w}x{target_h}+20+20")
+
     root.configure(fg_color=C["bg"])
 
     try:
