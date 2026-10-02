@@ -385,11 +385,21 @@ def create(parent_frame, boot_data=None):
     boot_data = boot_data or {}
     config = load_config()
 
+    try:
+        scr_w = parent_frame.winfo_screenwidth()
+        scr_h = parent_frame.winfo_screenheight()
+    except Exception:
+        scr_w, scr_h = 1920, 1080
+
+    is_small_screen = (scr_w <= 1366 or scr_h <= 768)
+
     # Main Grid Container (Clean Vibrant Slate)
     container = ctk.CTkFrame(parent_frame, fg_color=THEME["bg"], corner_radius=0)
     container.pack(fill="both", expand=True)
-    container.grid_columnconfigure(0, weight=5, minsize=520)  # Left panel (Collapsible Static Dashboard)
-    container.grid_columnconfigure(1, weight=6, minsize=560)  # Right panel (Preview & Live Monitor)
+    col0_min = 360 if is_small_screen else 520
+    col1_min = 400 if is_small_screen else 560
+    container.grid_columnconfigure(0, weight=5, minsize=col0_min)  # Left panel (Collapsible Static Dashboard)
+    container.grid_columnconfigure(1, weight=6, minsize=col1_min)  # Right panel (Preview & Live Monitor)
     container.grid_rowconfigure(0, weight=1)
 
     # ════════════════════════════════════════════════════════════════
@@ -581,9 +591,12 @@ def create(parent_frame, boot_data=None):
     }
     active_profile_key = ["video_1"]
 
-    # Canvas scale (640x360 -> 1920x1080)
-    CW, CH = 640, 360
-    SCALE = 1920.0 / CW  # 3.0
+    # Canvas scale (480x270 for 720p/1k screens, 640x360 for standard 1080p+)
+    if is_small_screen:
+        CW, CH = 480, 270
+    else:
+        CW, CH = 640, 360
+    SCALE = 1920.0 / CW
 
     # ════════════════════════════════════════════════════════════════
     # LEFT PANEL: STATIC COLLAPSIBLE DASHBOARD WITH EXTEND BUTTONS
@@ -2033,9 +2046,9 @@ It speaks before I step inside!"""
 
 
     # ════════════════════════════════════════════════════════════════
-    # RIGHT PANEL: REALTIME 3D CANVAS & PROCESS MONITOR
+    # RIGHT PANEL: REALTIME 3D CANVAS & PROCESS MONITOR (SCROLLABLE & RESPONSIVE)
     # ════════════════════════════════════════════════════════════════
-    right_frame = ctk.CTkFrame(
+    right_frame = ctk.CTkScrollableFrame(
         container,
         fg_color=THEME["surface"],
         corner_radius=16,
@@ -2043,7 +2056,6 @@ It speaks before I step inside!"""
         border_color=THEME["card_border"]
     )
     right_frame.grid(row=0, column=1, sticky="nsew", padx=(6, 12), pady=12)
-    right_frame.grid_rowconfigure(2, weight=1)
     right_frame.grid_columnconfigure(0, weight=1)
 
     # Header & Switcher
@@ -2551,28 +2563,28 @@ It speaks before I step inside!"""
         if show_banner_var.get():
             bx = pos_1080["banner"][0] / SCALE
             by = pos_1080["banner"][1] / SCALE
-            if bx <= cx <= bx + 360 and by <= cy <= by + 45:
+            if bx <= cx <= bx + (1080.0 / SCALE) and by <= cy <= by + (135.0 / SCALE):
                 return "banner"
 
         lx = pos_1080["logo"][0] / SCALE
         ly = pos_1080["logo"][1] / SCALE
-        if lx <= cx <= lx + 45 and ly <= cy <= ly + 45:
+        if lx <= cx <= lx + (135.0 / SCALE) and ly <= cy <= ly + (135.0 / SCALE):
             return "logo"
 
         if studio_mode_var.get() == "video_to_music":
             sx = pos_1080["subject"][0] / SCALE
             sy = pos_1080["subject"][1] / SCALE
-            if sx <= cx <= sx + 200 and sy <= cy <= sy + 250:
+            if sx <= cx <= sx + (600.0 / SCALE) and sy <= cy <= sy + (750.0 / SCALE):
                 return "subject"
 
         tx = pos_1080["text"][0] / SCALE
         ty = pos_1080["text"][1] / SCALE
-        if tx <= cx <= tx + 320 and ty - 10 <= cy <= ty + 60:
+        if tx <= cx <= tx + (960.0 / SCALE) and ty - 10 <= cy <= ty + (180.0 / SCALE):
             return "text"
 
         vx = pos_1080["viz"][0] / SCALE
         vy = pos_1080["viz"][1] / SCALE
-        if vx <= cx <= vx + 400 and vy <= cy <= vy + 40:
+        if vx <= cx <= vx + (1200.0 / SCALE) and vy <= cy <= vy + (120.0 / SCALE):
             return "viz"
 
         return None
