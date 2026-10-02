@@ -50,6 +50,11 @@ from video_engine import (
     parse_resolution
 )
 
+try:
+    import prayer_shorts_engine
+except ImportError:
+    prayer_shorts_engine = None
+
 # Ensure root workspace and uploader_engine are on sys.path
 _THIS_FILE = Path(__file__).resolve()
 for _cand in [
@@ -386,6 +391,57 @@ PLAYER_STYLES = [
     "Style 4: Dynamic Neon Glow"
 ]
 
+PRAYER_SHORTS_PRESETS = {
+    "🌟 Heavenly Gold Luxe": {
+        "name": "🌟 Heavenly Gold Luxe",
+        "enable_sparkles": True,
+        "enable_dust": True,
+        "enable_rays": True,
+        "enable_zoom": True,
+        "sparkle_count": 40,
+        "dust_count": 45
+    },
+    "✨ Sparkle Radiance": {
+        "name": "✨ Sparkle Radiance",
+        "enable_sparkles": True,
+        "enable_dust": False,
+        "enable_rays": False,
+        "enable_zoom": True,
+        "sparkle_count": 55,
+        "dust_count": 0
+    },
+    "☀️ Celestial God Rays & Dust": {
+        "name": "☀️ Celestial God Rays & Dust",
+        "enable_sparkles": False,
+        "enable_dust": True,
+        "enable_rays": True,
+        "enable_zoom": True,
+        "sparkle_count": 0,
+        "dust_count": 50
+    },
+    "🍃 Gentle Ambient Breathing": {
+        "name": "🍃 Gentle Ambient Breathing",
+        "enable_sparkles": False,
+        "enable_dust": True,
+        "enable_rays": False,
+        "enable_zoom": True,
+        "sparkle_count": 0,
+        "dust_count": 30
+    },
+    "🚫 None (Clean / Off)": {
+        "name": "🚫 None (Clean / Off)",
+        "enable_sparkles": False,
+        "enable_dust": False,
+        "enable_rays": False,
+        "enable_zoom": False,
+        "sparkle_count": 0,
+        "dust_count": 0
+    },
+    "⚙️ Custom Effects": {
+        "name": "⚙️ Custom Effects",
+    }
+}
+
 
 def create(parent_frame, boot_data=None):
     """Mounts the Suno Music Shorts Studio Tab into the parent tab frame."""
@@ -412,6 +468,44 @@ def create(parent_frame, boot_data=None):
     player_style_var = ctk.StringVar(value=PLAYER_STYLES[0])
     font_family_var = ctk.StringVar(value="Segoe UI")
     top_badge_text_var = ctk.StringVar(value="#Shorts")
+
+    # ── PRAYER SHORTS EFFECTS STATE ──
+    effect_preset_var = ctk.StringVar(value="🌟 Heavenly Gold Luxe")
+    enable_sparkles_var = ctk.BooleanVar(value=True)
+    enable_dust_var = ctk.BooleanVar(value=True)
+    enable_rays_var = ctk.BooleanVar(value=True)
+    enable_zoom_var = ctk.BooleanVar(value=True)
+
+    # ── MUSIC PLAYER OVERLAY SHOW / HIDE STATE ──
+    show_player_var = ctk.BooleanVar(value=True)
+
+    def _on_effect_preset_changed(val: str):
+        if val in PRAYER_SHORTS_PRESETS:
+            cfg = PRAYER_SHORTS_PRESETS[val]
+            if "enable_sparkles" in cfg:
+                enable_sparkles_var.set(cfg["enable_sparkles"])
+                enable_dust_var.set(cfg["enable_dust"])
+                enable_rays_var.set(cfg["enable_rays"])
+                enable_zoom_var.set(cfg["enable_zoom"])
+
+    def _on_effect_checkbox_toggled():
+        sp = enable_sparkles_var.get()
+        du = enable_dust_var.get()
+        ra = enable_rays_var.get()
+        zm = enable_zoom_var.get()
+        matched = False
+        for p_name, p_cfg in PRAYER_SHORTS_PRESETS.items():
+            if p_name == "⚙️ Custom Effects":
+                continue
+            if (p_cfg.get("enable_sparkles") == sp and
+                p_cfg.get("enable_dust") == du and
+                p_cfg.get("enable_rays") == ra and
+                p_cfg.get("enable_zoom") == zm):
+                effect_preset_var.set(p_name)
+                matched = True
+                break
+        if not matched:
+            effect_preset_var.set("⚙️ Custom Effects")
 
     default_out_dir = str(get_downloads_dir())
     out_dir_var = ctk.StringVar(value=default_out_dir)
@@ -956,54 +1050,131 @@ def create(parent_frame, boot_data=None):
     _update_premade_list_display()
 
     # ────────────────────────────────────────────────────────────────
-    # CARD 2: UNIVERSAL 9:16 BACKGROUND VIDEO & VISUALS (EXPANDED)
+    # CARD 2: UNIVERSAL 9:16 BACKGROUND MEDIA, EFFECTS & PLAYER
     # ────────────────────────────────────────────────────────────────
-    c_media = CollapsibleCard(left_scroll, "Universal 9:16 Background Video & Visualizer", icon="🎬", badge_text="9:16 Video Ready", default_expanded=True)
+    c_media = CollapsibleCard(left_scroll, "Universal 9:16 Media, Effects & Player", icon="🎬", badge_text="Shorts Ready", default_expanded=True)
     all_cards.append(c_media)
     c_media.body.grid_columnconfigure(1, weight=1)
 
-    ctk.CTkLabel(c_media.body, text="Universal 9:16 Video:", font=FONTS["small_bold"], text_color="#38bdf8").grid(row=0, column=0, sticky="w", padx=6, pady=4)
+    ctk.CTkLabel(c_media.body, text="Universal 9:16 Media:", font=FONTS["small_bold"], text_color="#38bdf8").grid(row=0, column=0, sticky="w", padx=6, pady=4)
     ent_univ_vid = ctk.CTkEntry(c_media.body, textvariable=universal_video_path_var, height=30, fg_color=THEME["input_bg"], border_color=THEME["input_border"], font=FONTS["small_bold"])
     ent_univ_vid.grid(row=0, column=1, sticky="ew", padx=4, pady=4)
 
     def _browse_univ_video():
         fn = filedialog.askopenfilename(
-            title="Select Universal Default 9:16 Background Video",
-            filetypes=[("Video Files", "*.mp4 *.mov *.webm *.mkv"), ("All Files", "*.*")]
+            title="Select Universal Default 9:16 Background Video or Image",
+            filetypes=[("Media Files", "*.mp4 *.mov *.webm *.mkv *.png *.jpg *.jpeg *.webp"), ("All Files", "*.*")]
         )
         if fn:
             universal_video_path_var.set(fn)
-            c_media.set_badge("🎬 9:16 Video Attached", "#4ade80")
+            c_media.set_badge("🎬 9:16 Attached", "#4ade80")
 
-    ctk.CTkButton(c_media.body, text="📁 Browse Video", width=110, height=28, fg_color=THEME["btn_indigo"], font=FONTS["btn_small"], command=_browse_univ_video).grid(row=0, column=2, padx=4, pady=4)
+    ctk.CTkButton(c_media.body, text="📁 Browse Media", width=110, height=28, fg_color=THEME["btn_indigo"], font=FONTS["btn_small"], command=_browse_univ_video).grid(row=0, column=2, padx=4, pady=4)
 
     # Folder of 9:16 Videos
-    ctk.CTkLabel(c_media.body, text="Or 9:16 Videos Folder:", font=FONTS["small_bold"], text_color=THEME["text_muted"]).grid(row=1, column=0, sticky="w", padx=6, pady=4)
+    ctk.CTkLabel(c_media.body, text="Or 9:16 Folder:", font=FONTS["small_bold"], text_color=THEME["text_muted"]).grid(row=1, column=0, sticky="w", padx=6, pady=4)
     ent_univ_folder = ctk.CTkEntry(c_media.body, textvariable=universal_folder_path_var, height=28, fg_color=THEME["input_bg"], border_color=THEME["input_border"], font=FONTS["small_bold"])
     ent_univ_folder.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
 
     def _browse_univ_folder():
-        d = filedialog.askdirectory(title="Select Folder of 9:16 Videos (Auto-Rotate across Shorts)")
+        d = filedialog.askdirectory(title="Select Folder of 9:16 Videos/Images (Auto-Rotate across Shorts)")
         if d:
             universal_folder_path_var.set(d)
             c_media.set_badge("📂 Folder Connected", "#a855f7")
 
     ctk.CTkButton(c_media.body, text="📂 Browse Folder", width=110, height=28, fg_color=THEME["secondary_btn"], font=FONTS["btn_small"], command=_browse_univ_folder).grid(row=1, column=2, padx=4, pady=4)
 
+    # ── DIVIDER: PRAYER SHORTS EFFECTS ──
+    fx_sep = ctk.CTkFrame(c_media.body, height=1, fg_color="#1e293b")
+    fx_sep.grid(row=2, column=0, columnspan=3, sticky="ew", padx=6, pady=(10, 6))
+
+    fx_hdr = ctk.CTkFrame(c_media.body, fg_color="transparent")
+    fx_hdr.grid(row=3, column=0, columnspan=3, sticky="ew", padx=6, pady=(2, 6))
+    ctk.CTkLabel(fx_hdr, text="✨ PRAYER SHORTS VISUAL EFFECTS", font=FONTS["body_bold"], text_color="#f59e0b").pack(side="left")
+    ctk.CTkLabel(fx_hdr, text="• Star Sparkles  • Dust Orbs  • God Rays  • Zoom", font=FONTS["small"], text_color="#94a3b8").pack(side="left", padx=8)
+
+    # Preset dropdown
+    ctk.CTkLabel(c_media.body, text="Effects Preset:", font=FONTS["small_bold"], text_color="#f59e0b").grid(row=4, column=0, sticky="w", padx=6, pady=3)
+    opt_effect_preset = ctk.CTkOptionMenu(
+        c_media.body,
+        values=list(PRAYER_SHORTS_PRESETS.keys()),
+        variable=effect_preset_var,
+        height=28,
+        fg_color="#1e1b4b",
+        button_color="#4f46e5",
+        font=FONTS["small_bold"],
+        command=_on_effect_preset_changed
+    )
+    opt_effect_preset.grid(row=4, column=1, columnspan=2, sticky="ew", padx=4, pady=3)
+
+    # Checkboxes grid for fine-tuning
+    fx_grid = ctk.CTkFrame(c_media.body, fg_color="#0a0e1a", corner_radius=8, border_width=1, border_color="#1e293b")
+    fx_grid.grid(row=5, column=0, columnspan=3, sticky="ew", padx=6, pady=4)
+    fx_grid.grid_columnconfigure((0, 1), weight=1)
+
+    chk_sparkles = ctk.CTkCheckBox(fx_grid, text="🌟 4-Point Golden Star Sparkles", variable=enable_sparkles_var, font=FONTS["small_bold"], text_color="#fbbf24", command=_on_effect_checkbox_toggled)
+    chk_sparkles.grid(row=0, column=0, sticky="w", padx=10, pady=6)
+
+    chk_dust = ctk.CTkCheckBox(fx_grid, text="🌫️ Floating Bokeh Dust Orbs", variable=enable_dust_var, font=FONTS["small_bold"], text_color="#38bdf8", command=_on_effect_checkbox_toggled)
+    chk_dust.grid(row=0, column=1, sticky="w", padx=10, pady=6)
+
+    chk_rays = ctk.CTkCheckBox(fx_grid, text="☀️ Heavenly God Rays Shimmer", variable=enable_rays_var, font=FONTS["small_bold"], text_color="#facc15", command=_on_effect_checkbox_toggled)
+    chk_rays.grid(row=1, column=0, sticky="w", padx=10, pady=6)
+
+    chk_zoom = ctk.CTkCheckBox(fx_grid, text="🎥 Cinematic Ken Burns Zoom & Drift", variable=enable_zoom_var, font=FONTS["small_bold"], text_color="#a78bfa", command=_on_effect_checkbox_toggled)
+    chk_zoom.grid(row=1, column=1, sticky="w", padx=10, pady=6)
+
+    # ── DIVIDER: MUSIC PLAYER OVERLAY SHOW/HIDE ──
+    p_sep = ctk.CTkFrame(c_media.body, height=1, fg_color="#1e293b")
+    p_sep.grid(row=6, column=0, columnspan=3, sticky="ew", padx=6, pady=(10, 6))
+
+    p_hdr = ctk.CTkFrame(c_media.body, fg_color="transparent")
+    p_hdr.grid(row=7, column=0, columnspan=3, sticky="ew", padx=6, pady=(2, 6))
+
+    def _on_player_show_toggled():
+        st = "normal" if show_player_var.get() else "disabled"
+        opt_player_style.configure(state=st)
+        opt_viz_style.configure(state=st)
+        ent_viz_color.configure(state=st)
+        ent_badge_text.configure(state=st)
+        try:
+            _draw_916_canvas()
+        except Exception:
+            pass
+
+    chk_show_player = ctk.CTkSwitch(
+        p_hdr,
+        text="🎧 Show Music Player Overlay (Title, Time & Progress Bar)",
+        variable=show_player_var,
+        font=FONTS["body_bold"],
+        text_color="#38bdf8",
+        progress_color="#0284c7",
+        command=_on_player_show_toggled
+    )
+    chk_show_player.pack(side="left")
+
+    # Player style
+    lbl_pstyle = ctk.CTkLabel(c_media.body, text="Shorts Overlay Style:", font=FONTS["small_bold"], text_color=THEME["text"])
+    lbl_pstyle.grid(row=8, column=0, sticky="w", padx=6, pady=4)
+    opt_player_style = ctk.CTkOptionMenu(c_media.body, values=PLAYER_STYLES, variable=player_style_var, height=28, fg_color=THEME["input_bg"], button_color=THEME["secondary_btn"], font=FONTS["small_bold"])
+    opt_player_style.grid(row=8, column=1, sticky="ew", padx=4, pady=4)
+
     # Visualizer Style & Color
-    ctk.CTkLabel(c_media.body, text="Audio Visualizer:", font=FONTS["small_bold"], text_color=THEME["text"]).grid(row=2, column=0, sticky="w", padx=6, pady=4)
-    ctk.CTkOptionMenu(c_media.body, values=VISUALIZER_STYLES, variable=visualizer_style_var, height=28, fg_color=THEME["input_bg"], button_color=THEME["btn_indigo"], font=FONTS["small_bold"]).grid(row=2, column=1, sticky="ew", padx=4, pady=4)
+    lbl_viz = ctk.CTkLabel(c_media.body, text="Audio Visualizer:", font=FONTS["small_bold"], text_color=THEME["text"])
+    lbl_viz.grid(row=9, column=0, sticky="w", padx=6, pady=4)
+    opt_viz_style = ctk.CTkOptionMenu(c_media.body, values=VISUALIZER_STYLES, variable=visualizer_style_var, height=28, fg_color=THEME["input_bg"], button_color=THEME["btn_indigo"], font=FONTS["small_bold"])
+    opt_viz_style.grid(row=9, column=1, sticky="ew", padx=4, pady=4)
 
-    ctk.CTkLabel(c_media.body, text="Visualizer Color:", font=FONTS["small_bold"], text_color=THEME["text"]).grid(row=3, column=0, sticky="w", padx=6, pady=4)
-    ctk.CTkEntry(c_media.body, textvariable=visualizer_color_var, height=28, fg_color=THEME["input_bg"], border_color=THEME["input_border"], font=FONTS["small_bold"]).grid(row=3, column=1, sticky="ew", padx=4, pady=4)
-
-    # Player Overlay Style
-    ctk.CTkLabel(c_media.body, text="Shorts Overlay Style:", font=FONTS["small_bold"], text_color=THEME["text"]).grid(row=4, column=0, sticky="w", padx=6, pady=4)
-    ctk.CTkOptionMenu(c_media.body, values=PLAYER_STYLES, variable=player_style_var, height=28, fg_color=THEME["input_bg"], button_color=THEME["secondary_btn"], font=FONTS["small_bold"]).grid(row=4, column=1, sticky="ew", padx=4, pady=4)
+    lbl_vcol = ctk.CTkLabel(c_media.body, text="Visualizer Color:", font=FONTS["small_bold"], text_color=THEME["text"])
+    lbl_vcol.grid(row=10, column=0, sticky="w", padx=6, pady=4)
+    ent_viz_color = ctk.CTkEntry(c_media.body, textvariable=visualizer_color_var, height=28, fg_color=THEME["input_bg"], border_color=THEME["input_border"], font=FONTS["small_bold"])
+    ent_viz_color.grid(row=10, column=1, sticky="ew", padx=4, pady=4)
 
     # Top Badge Text
-    ctk.CTkLabel(c_media.body, text="Top Badge / Tag:", font=FONTS["small_bold"], text_color=THEME["text"]).grid(row=5, column=0, sticky="w", padx=6, pady=4)
-    ctk.CTkEntry(c_media.body, textvariable=top_badge_text_var, height=28, fg_color=THEME["input_bg"], border_color=THEME["input_border"], font=FONTS["small_bold"]).grid(row=5, column=1, sticky="ew", padx=4, pady=4)
+    lbl_badge = ctk.CTkLabel(c_media.body, text="Top Badge / Tag:", font=FONTS["small_bold"], text_color=THEME["text"])
+    lbl_badge.grid(row=11, column=0, sticky="w", padx=6, pady=4)
+    ent_badge_text = ctk.CTkEntry(c_media.body, textvariable=top_badge_text_var, height=28, fg_color=THEME["input_bg"], border_color=THEME["input_border"], font=FONTS["small_bold"])
+    ent_badge_text.grid(row=11, column=1, sticky="ew", padx=4, pady=4)
 
     # ────────────────────────────────────────────────────────────────
     # CARD 3: 9:16 RESOLUTION & RENDER QUALITY (COLLAPSIBLE)
@@ -1099,6 +1270,28 @@ def create(parent_frame, boot_data=None):
 
     tk_img_ref = [None]
     canvas_tick = [0]
+    canvas_sparkles = [
+        {
+            "x": random.randint(15, CW - 15),
+            "y": random.randint(20, CH - 40),
+            "size": random.randint(6, 14),
+            "age": random.randint(0, 30),
+            "life": random.randint(20, 50),
+            "speed": random.choice([-1, 1])
+        }
+        for _ in range(16)
+    ]
+    canvas_dust = [
+        {
+            "x": random.uniform(10, CW - 10),
+            "y": random.uniform(10, CH - 10),
+            "size": random.uniform(2.0, 5.0),
+            "speed": random.uniform(0.6, 1.8),
+            "phase": random.uniform(0, 6.28),
+            "alpha": random.randint(70, 180)
+        }
+        for _ in range(22)
+    ]
 
     def _draw_916_canvas():
         canvas_tick[0] += 1
@@ -1107,57 +1300,114 @@ def create(parent_frame, boot_data=None):
         base_img = Image.new("RGBA", (CW, CH), (10, 15, 29, 255))
         draw = ImageDraw.Draw(base_img)
 
-        # Draw subtle vertical gradient or background
+        # 1. Background Media or Gradient Tone
         u_vid = universal_video_path_var.get()
         if u_vid and os.path.exists(u_vid):
-            # Gradient tone indicating active video
             draw.rectangle([0, 0, CW, CH], fill=(16, 24, 40, 255))
         else:
-            # Dark futuristic mesh
+            # Aesthetic devotional dark/gold mesh
             for y in range(0, CH, 40):
-                draw.line([(0, y), (CW, y)], fill=(18, 26, 46, 120), width=1)
+                draw.line([(0, y), (CW, y)], fill=(22, 28, 46, 110), width=1)
             for x in range(0, CW, 40):
-                draw.line([(x, 0), (x, CH)], fill=(18, 26, 46, 120), width=1)
+                draw.line([(x, 0), (x, CH)], fill=(22, 28, 46, 110), width=1)
 
-        # Top Badge (#Shorts)
-        badge_t = top_badge_text_var.get() or "#Shorts"
-        draw.rounded_rectangle([20, 24, 110, 52], radius=6, fill=(2, 132, 199, 220))
-        draw.text((32, 28), badge_t, fill=(255, 255, 255, 255))
+        # 2. Prayer Shorts: God Rays Shimmer
+        if enable_rays_var.get():
+            ray_shimmer = 0.65 + 0.35 * math.sin(t * 1.5)
+            r_alpha = int(42 * ray_shimmer)
+            for ri in range(4):
+                rx = int(CW * 0.72 + ri * 22)
+                draw.polygon([(rx, 0), (rx + 36, 0), (rx - 80, CH), (rx - 116, CH)], fill=(255, 235, 150, r_alpha))
 
-        # Channel Badge Top Right
-        draw.rounded_rectangle([CW - 95, 24, CW - 20, 52], radius=6, fill=(30, 41, 59, 200))
-        draw.text((CW - 85, 28), "● HD 9:16", fill=(56, 189, 248, 255))
+        # 3. Prayer Shorts: Floating Bokeh Dust Orbs
+        if enable_dust_var.get():
+            for d in canvas_dust:
+                d["y"] -= d["speed"]
+                d["x"] += 0.3 * math.sin(d["phase"] + t)
+                if d["y"] < -10:
+                    d["y"] = CH + 10
+                    d["x"] = random.uniform(10, CW - 10)
+                sz = d["size"]
+                draw.ellipse([d["x"] - sz, d["y"] - sz, d["x"] + sz, d["y"] + sz], fill=(255, 215, 120, d["alpha"]))
 
-        # Title in Lower Third (Centered around y=310)
-        draw.text((CW // 2, 305), "🎵 SHORT TITLE PREVIEW", fill=(255, 255, 255, 255), anchor="mm")
-        draw.text((CW // 2, 330), "Suno AI Music • Worship", fill=(148, 163, 184, 255), anchor="mm")
+        # 4. Prayer Shorts: Golden 4-Point Star Sparkles
+        if enable_sparkles_var.get():
+            for sp in canvas_sparkles:
+                sp["age"] += 1
+                if sp["age"] >= sp["life"]:
+                    sp["age"] = 0
+                    sp["x"] = random.randint(15, CW - 15)
+                    sp["y"] = random.randint(20, CH - 40)
+                    sp["size"] = random.randint(6, 13)
+                    sp["life"] = random.randint(20, 50)
+                prog = sp["age"] / max(1, sp["life"])
+                intense = math.sin(prog * math.pi) ** 1.5
+                if intense > 0.08:
+                    sx, sy, sz = sp["x"], sp["y"], int(sp["size"] * intense)
+                    alpha_sp = int(240 * intense)
+                    draw.line([(sx - sz, sy), (sx + sz, sy)], fill=(255, 235, 140, alpha_sp), width=1)
+                    draw.line([(sx, sy - sz), (sx, sy + sz)], fill=(255, 235, 140, alpha_sp), width=1)
+                    draw.ellipse([sx - 1, sy - 1, sx + 1, sy + 1], fill=(255, 255, 255, alpha_sp))
 
-        # Audio Waveform / Visualizer Preview around y=365
-        viz_st = visualizer_style_var.get()
-        v_col_hex = visualizer_color_var.get() or "#38bdf8"
-        v_rgb = hex_to_rgb(v_col_hex)
+        # 5. Music Player Overlay (ONLY if show_player_var is True)
+        if show_player_var.get():
+            # Top Badge (#Shorts)
+            badge_t = top_badge_text_var.get() or "#Shorts"
+            draw.rounded_rectangle([20, 24, 110, 52], radius=6, fill=(2, 132, 199, 220))
+            draw.text((32, 28), badge_t, fill=(255, 255, 255, 255))
 
-        if "none" not in viz_st.lower():
-            wave_y = 370
-            wave_w = 210
-            start_x = (CW - wave_w) // 2
-            for bar_i in range(24):
-                bx = start_x + (bar_i * 9)
-                bh = int(12 + 18 * abs(math.sin(t * 1.5 + bar_i * 0.4)))
-                draw.rounded_rectangle([bx, wave_y - bh // 2, bx + 6, wave_y + bh // 2], radius=3, fill=v_rgb)
+            # Channel Badge Top Right
+            draw.rounded_rectangle([CW - 95, 24, CW - 20, 52], radius=6, fill=(30, 41, 59, 200))
+            draw.text((CW - 85, 28), "● HD 9:16", fill=(56, 189, 248, 255))
 
-        # Progress Line
-        prog_y = 415
-        prog_w = 210
-        p_start_x = (CW - prog_w) // 2
-        draw.line([(p_start_x, prog_y), (p_start_x + prog_w, prog_y)], fill=(51, 65, 85, 200), width=3)
-        cur_w = int(prog_w * ((t * 0.2) % 1.0))
-        draw.line([(p_start_x, prog_y), (p_start_x + cur_w, prog_y)], fill=(56, 189, 248, 255), width=3)
-        draw.ellipse([p_start_x + cur_w - 4, prog_y - 4, p_start_x + cur_w + 4, prog_y + 4], fill=(255, 255, 255, 255))
+            cur_pstyle = player_style_var.get().lower()
 
-        # Bottom Subtitle / Time
-        draw.text((p_start_x, prog_y + 14), "0:15", fill=(148, 163, 184, 255), anchor="lm")
-        draw.text((p_start_x + prog_w, prog_y + 14), "0:60", fill=(148, 163, 184, 255), anchor="rm")
+            # Spinning vinyl disc preview if vinyl style
+            if "vinyl" in cur_pstyle:
+                vx, vy, vr = 42, 318, 22
+                draw.ellipse([vx - vr, vy - vr, vx + vr, vy + vr], fill=(18, 18, 22, 240), outline=(50, 50, 60, 255))
+                draw.ellipse([vx - 7, vy - 7, vx + 7, vy + 7], fill=(56, 189, 248, 255))
+                # Title next to disc
+                draw.text((75, 305), "🎵 SHORT TITLE", fill=(255, 255, 255, 255), anchor="lm")
+                draw.text((75, 325), "Suno AI Music", fill=(148, 163, 184, 255), anchor="lm")
+            elif "glass" in cur_pstyle:
+                draw.rounded_rectangle([18, 285, CW - 18, 350], radius=8, fill=(15, 23, 42, 180), outline=(56, 189, 248, 80))
+                draw.text((CW // 2, 302), "🎵 SHORT TITLE PREVIEW", fill=(255, 255, 255, 255), anchor="mm")
+                draw.text((CW // 2, 324), "Suno AI Music • Glass Studio", fill=(148, 163, 184, 255), anchor="mm")
+            else:
+                draw.text((CW // 2, 305), "🎵 SHORT TITLE PREVIEW", fill=(255, 255, 255, 255), anchor="mm")
+                draw.text((CW // 2, 330), "Suno AI Music • Worship", fill=(148, 163, 184, 255), anchor="mm")
+
+            # Audio Waveform / Visualizer Preview around y=365
+            viz_st = visualizer_style_var.get()
+            v_col_hex = visualizer_color_var.get() or "#38bdf8"
+            v_rgb = hex_to_rgb(v_col_hex)
+
+            if "none" not in viz_st.lower():
+                wave_y = 370
+                wave_w = 210
+                start_x = (CW - wave_w) // 2
+                for bar_i in range(24):
+                    bx = start_x + (bar_i * 9)
+                    bh = int(12 + 18 * abs(math.sin(t * 1.5 + bar_i * 0.4)))
+                    draw.rounded_rectangle([bx, wave_y - bh // 2, bx + 6, wave_y + bh // 2], radius=3, fill=v_rgb)
+
+            # Progress Line
+            prog_y = 415
+            prog_w = 210
+            p_start_x = (CW - prog_w) // 2
+            draw.line([(p_start_x, prog_y), (p_start_x + prog_w, prog_y)], fill=(51, 65, 85, 200), width=3)
+            cur_w = int(prog_w * ((t * 0.2) % 1.0))
+            draw.line([(p_start_x, prog_y), (p_start_x + cur_w, prog_y)], fill=(56, 189, 248, 255), width=3)
+            draw.ellipse([p_start_x + cur_w - 4, prog_y - 4, p_start_x + cur_w + 4, prog_y + 4], fill=(255, 255, 255, 255))
+
+            # Bottom Subtitle / Time
+            draw.text((p_start_x, prog_y + 14), "0:15", fill=(148, 163, 184, 255), anchor="lm")
+            draw.text((p_start_x + prog_w, prog_y + 14), "0:60", fill=(148, 163, 184, 255), anchor="rm")
+        else:
+            # Player overlay hidden — subtle indicator badge only
+            draw.rounded_rectangle([CW - 105, 24, CW - 20, 52], radius=6, fill=(30, 41, 59, 140))
+            draw.text((CW - 95, 28), "✨ Clean 9:16", fill=(251, 191, 36, 255))
 
         photo = ImageTk.PhotoImage(base_img)
         tk_img_ref[0] = photo
@@ -1520,25 +1770,80 @@ def create(parent_frame, boot_data=None):
                     u["lbl_sub"].configure(text=f"Encoding 9:16: {int(p*100)}% {m}")
                 ))
 
-            # Execute FFmpeg 9:16 Render via render_dual_variant_video
-            success = render_dual_variant_video(
-                audio_files=[item_obj["audio_file"]],
-                song_titles=[s_title],
-                output_mp4_path=out_path,
-                mode="video_to_music" if (item_obj.get("video_path") and os.path.exists(item_obj["video_path"])) else "image_to_music",
-                bg_video_path=item_obj.get("video_path"),
-                bg_image_path=None,
-                resolution=chosen_res,
-                quality_preset=chosen_qual,
-                audio_bitrate=chosen_bitrate,
-                fps=chosen_fps,
-                gpu_mode=chosen_gpu,
-                visualizer_style=vis_st,
-                visualizer_color=vis_col,
-                player_style=p_style,
-                progress_fn=_prog,
-                log_fn=_log_console
-            )
+            # Effects config from user settings
+            effects_cfg = {
+                "enable_sparkles": enable_sparkles_var.get(),
+                "enable_dust": enable_dust_var.get(),
+                "enable_rays": enable_rays_var.get(),
+                "enable_zoom": enable_zoom_var.get(),
+                "sparkle_count": 40 if enable_sparkles_var.get() else 0,
+                "dust_count": 45 if enable_dust_var.get() else 0
+            }
+
+            media_target = item_obj.get("video_path") or universal_video_path_var.get() or ""
+            dur_val = "auto"
+            if max_dur_limit:
+                dur_val = str(max_dur_limit)
+
+            item_render_spec = {
+                "audio_path": item_obj["audio_file"],
+                "media_path": media_target,
+                "song_title": s_title,
+                "duration_mode": dur_val,
+                "preset": effects_cfg,
+                "show_player": show_player_var.get(),
+                "player_style": p_style,
+                "visualizer_style": vis_st,
+                "visualizer_color": vis_col,
+                "badge_text": badge_tag,
+                "resolution": chosen_res,
+                "fps": chosen_fps,
+                "audio_bitrate": chosen_bitrate
+            }
+
+            def _ps_prog(cur_f, tot_f, fps_val, eta_val):
+                p_frac = cur_f / max(1, tot_f)
+                container.after(0, lambda u=card_ui, p=p_frac, f=fps_val, e=eta_val: (
+                    u["p_bar"].set(p),
+                    u["lbl_sub"].configure(text=f"GPU Encoding: {int(p*100)}% ({f:.1f} FPS | ETA {int(e)}s)")
+                ))
+
+            success = False
+            try:
+                if prayer_shorts_engine:
+                    out_file = prayer_shorts_engine.render_prayer_short(
+                        item=item_render_spec,
+                        output_folder=str(out_folder),
+                        progress_callback=_ps_prog,
+                        gpu_mode=chosen_gpu
+                    )
+                    if out_file and os.path.exists(out_file):
+                        out_path = out_file
+                        success = True
+            except Exception as e_pipe:
+                _log_console(f"⚠️ GPU direct pipe warning ({e_pipe}), falling back to video_engine...")
+
+            if not success:
+                # Fallback to video_engine.render_dual_variant_video
+                success = render_dual_variant_video(
+                    audio_files=[item_obj["audio_file"]],
+                    song_titles=[s_title],
+                    output_mp4_path=out_path,
+                    mode="video_to_music" if (media_target and os.path.exists(media_target) and media_target.lower().endswith(('.mp4', '.mov', '.webm', '.mkv'))) else "image_to_music",
+                    bg_video_path=media_target if (media_target and media_target.lower().endswith(('.mp4', '.mov', '.webm', '.mkv'))) else None,
+                    bg_image_path=media_target if (media_target and not media_target.lower().endswith(('.mp4', '.mov', '.webm', '.mkv'))) else None,
+                    resolution=chosen_res,
+                    quality_preset=chosen_qual,
+                    audio_bitrate=chosen_bitrate,
+                    fps=chosen_fps,
+                    gpu_mode=chosen_gpu,
+                    visualizer_style=vis_st,
+                    visualizer_color=vis_col,
+                    player_style=p_style,
+                    show_player=show_player_var.get(),
+                    progress_fn=_prog,
+                    log_fn=_log_console
+                )
 
             if success and os.path.exists(out_path):
                 rendered_shorts_files.append(out_path)
