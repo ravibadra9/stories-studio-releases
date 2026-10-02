@@ -259,9 +259,8 @@ class StoryImageVideoTab(ctk.CTkFrame):
         api_wrap.grid(row=1, column=1, columnspan=2, padx=(2, 6), pady=2, sticky="ew")
         api_wrap.grid_columnconfigure(0, weight=1)
 
-        self.api_key = ctk.CTkEntry(api_wrap, placeholder_text="sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt", show="*", height=26, fg_color=C_BG, border_color=C_BORDER)
+        self.api_key = ctk.CTkEntry(api_wrap, placeholder_text="Paste AI33Pro API Key (sk_...)", show="*", height=26, fg_color=C_BG, border_color=C_BORDER)
         self.api_key.grid(row=0, column=0, padx=(0, 4), sticky="ew")
-        self.api_key.insert(0, "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
 
         self.show_key_btn = ctk.CTkButton(api_wrap, text="👁", width=28, height=26, fg_color=C_CARD_HEADER, command=self._toggle_key_visibility)
         self.show_key_btn.grid(row=0, column=1, padx=(0, 4))
@@ -875,7 +874,7 @@ class StoryImageVideoTab(ctk.CTkFrame):
             try:
                 import voice_cache
                 cached = voice_cache.load_api_key()
-                if cached and not self.api_key.get().strip():
+                if cached and cached != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt" and not self.api_key.get().strip():
                     self.api_key.delete(0, "end")
                     self.api_key.insert(0, cached)
             except Exception:
@@ -1024,7 +1023,15 @@ class StoryImageVideoTab(ctk.CTkFrame):
                 self.parse_script_blocks()
 
     def _fetch_voices_threaded(self):
-        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+        key = self.api_key.get().strip() if hasattr(self, "api_key") else ""
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
+        if not key:
+            if hasattr(self, "api_status"):
+                self.api_status.configure(text="⚠️ Please insert your AI33Pro API Key first!", text_color="#F59E0B")
+            if hasattr(self, "api_key"):
+                self.api_key.focus()
+            return
         
         # 1. Immediate instant load from cache/built-in so user never waits (0s delay)
         import voice_cache
@@ -1055,9 +1062,13 @@ class StoryImageVideoTab(ctk.CTkFrame):
             if cached:
                 self._update_voices_ui(cached)
             else:
-                self._fetch_voices_threaded()
+                key = (self.api_key.get().strip() if hasattr(self, "api_key") else "")
+                if key and key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+                    self._fetch_voices_threaded()
+                elif hasattr(self, "api_status"):
+                    self.api_status.configure(text="Insert AI33 API Key and click 'Fetch Voices'", text_color=C_MUTED)
         except Exception:
-            self._fetch_voices_threaded()
+            pass
 
     def _update_voices_ui(self, voices: List[Dict[str, Any]]):
         self.voices = voices or []
@@ -1267,7 +1278,9 @@ class StoryImageVideoTab(ctk.CTkFrame):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
-        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+        key = self.api_key.get().strip() if hasattr(self, "api_key") else ""
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
