@@ -3313,7 +3313,7 @@ It speaks before I step inside!"""
                         logo_path=p1.get("logo_path") or None,
                         logo_scale=(p1.get("logo_scale", 100) / 100.0),
                         bg_effect=p1.get("bg_effect", "Cinematic Slow Zoom (Ken Burns)"),
-                        visualizer_style=p1.get("visualizer_style") or viz_style_var.get() or "None",
+                        visualizer_style=p1.get("visualizer_style") or p1.get("viz_style") or viz_style_var.get() or "None",
                         visualizer_color=p1.get("viz_color", "#BEF264"),
                         player_style=p1.get("player_style") or player_style_var.get() or "🌟 Circular Spinning Disc (Rotating Logo Vinyl)",
                         font_family=p1.get("font_family", "Segoe UI"),
@@ -3341,8 +3341,8 @@ It speaks before I step inside!"""
                     _log_console(f"Starting Video 2 (Channel 2 Profile) GPU Render: {v2_out_path}")
                     p2_mode = p2.get("mode", "video_to_music")
                     p2_cutout = p2.get("fg_cutout") or p2.get("fg_image")
-                    p2_bg_img = p2.get("img_path") or p1.get("img_path") or img2_path_var.get() or None
-                    p2_bg_vid = p2.get("bg_video") or p1.get("bg_video") or bg_video_path_var.get() or None
+                    p2_bg_img = (p2.get("img_path") if (p2.get("img_path") and os.path.exists(p2.get("img_path"))) else None) or p1.get("img_path") or img2_path_var.get() or None
+                    p2_bg_vid = (p2.get("bg_video") if (p2.get("bg_video") and os.path.exists(p2.get("bg_video"))) else None) or (p1.get("bg_video") if (p1.get("bg_video") and os.path.exists(p1.get("bg_video"))) else None) or bg_video_path_var.get() or None
                     p2_pos = p2.get("positions", pos_1080)
                     return render_dual_variant_video(
                         audio_files=v2_tracks if v2_tracks else v1_tracks,
@@ -3365,7 +3365,7 @@ It speaks before I step inside!"""
                         logo_path=p2.get("logo_path") or None,
                         logo_scale=(p2.get("logo_scale", 100) / 100.0),
                         bg_effect=p2.get("bg_effect", "Cinematic Slow Zoom (Ken Burns)"),
-                        visualizer_style=p2.get("visualizer_style") or viz_style_var.get() or "None",
+                        visualizer_style=p2.get("visualizer_style") or p2.get("viz_style") or viz_style_var.get() or "None",
                         visualizer_color=p2.get("viz_color", "#38BDF8"),
                         player_style=p2.get("player_style") or player_style_var.get() or "Style 5: Cyberpunk Neon HUD Deck",
 
