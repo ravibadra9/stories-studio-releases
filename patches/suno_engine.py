@@ -723,8 +723,8 @@ def render_dual_variant_video(
     gpu_mode: str = "auto",                          # auto, nvenc, qsv, amf, cpu
     # Background Motion Video Effects (Image mode)
     bg_effect: str = "Cinematic Slow Zoom (Ken Burns)",
-    # Visualizer Options
-    visualizer_style: str = "Neon Spectrum Bars",
+    # Visualizer Options (Default None - Not auto-applied)
+    visualizer_style: str = "None",
     visualizer_color: str = "#BEF264",
     # Player Style Options
     player_style: str = "Style 1: Centered Worship (Default)",
@@ -976,8 +976,8 @@ def render_dual_variant_video(
     # ────────────────────────────────────────────────────────────────
     # B. Audio Visualizer Layer (Scaled to Resolution)
     # ────────────────────────────────────────────────────────────────
-    viz_lower = visualizer_style.lower()
-    clean_viz_hex = visualizer_color.replace("#", "").replace("0x", "")
+    viz_lower = (visualizer_style or "none").lower()
+    clean_viz_hex = (visualizer_color or "#bef264").replace("#", "").replace("0x", "")
     if len(clean_viz_hex) < 6:
         clean_viz_hex = "bef264"
     viz_c1 = f"0x{clean_viz_hex}"
@@ -988,8 +988,8 @@ def render_dual_variant_video(
     vw = vw if vw % 2 == 0 else vw + 1
     vh = vh if vh % 2 == 0 else vh + 1
 
-    if "none" in viz_lower or "off" in viz_lower or "disable" in viz_lower:
-        # No visualizer rendered
+    if not visualizer_style or "none" in viz_lower or "off" in viz_lower or "disable" in viz_lower or "false" in viz_lower:
+        # No visualizer rendered (auto-disabled)
         pass
     elif "neon spectrum" in viz_lower or "bar" in viz_lower:
         filters.append(
