@@ -182,8 +182,6 @@ def ai33_tts_generate(
         clean_vid = bare_vid
 
     key_to_use = (api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or "").strip()
-    if key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        key_to_use = ""
 
     # Tier 1: AI33 v3 Endpoint
     if key_to_use:
@@ -338,8 +336,6 @@ class AI33Client:
 
     def __init__(self, api_key: Optional[str] = None, base_url: str = _DEFAULT_BASE_URL, timeout: int = 120):
         k = (api_key or os.getenv("AI33_API_KEY") or os.getenv("XI_API_KEY") or os.getenv("ELEVENLABS_API_KEY") or "").strip()
-        if k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            k = ""
         self.api_key = k
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
@@ -463,8 +459,6 @@ class AI33Client:
         seen_ids = set()
 
         api_key_to_use = (self.api_key or "").strip()
-        if api_key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            api_key_to_use = ""
         if not api_key_to_use:
             return []
 
