@@ -321,9 +321,8 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         self.gen_voice_frame.grid_columnconfigure(1, weight=1)
 
         ctk.CTkLabel(self.gen_voice_frame, text="AI33 API Key").grid(row=0, column=0, padx=14, pady=6, sticky="w")
-        self.api_key = ctk.CTkEntry(self.gen_voice_frame, show="•", placeholder_text="sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
+        self.api_key = ctk.CTkEntry(self.gen_voice_frame, show="•", placeholder_text="Paste AI33Pro API Key (sk_...)")
         self.api_key.grid(row=0, column=1, padx=4, pady=6, sticky="ew")
-        self.api_key.insert(0, "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt")
 
         api_btn_frame = ctk.CTkFrame(self.gen_voice_frame, fg_color="transparent")
         api_btn_frame.grid(row=0, column=2, padx=(4, 14), pady=6, sticky="e")
@@ -662,7 +661,7 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         try:
             import voice_cache
             key = voice_cache.load_api_key()
-            if hasattr(self, "api_key") and key:
+            if hasattr(self, "api_key") and key and key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
                 try:
                     self.api_key.delete(0, "end")
                     self.api_key.insert(0, key)
@@ -672,9 +671,12 @@ class RecapStudioTabFrame(ctk.CTkFrame):
             if cached:
                 self._update_voices_ui(cached)
             else:
-                self.fetch_api_data()
+                if key and key != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+                    self.fetch_api_data()
+                else:
+                    self.api_status.configure(text="Insert AI33 API Key and click 'Fetch Voices'", text_color="gray70")
         except Exception:
-            self.fetch_api_data()
+            pass
 
     def _file_row(self, parent, row, label_text, command, hint):
         ctk.CTkLabel(parent, text=label_text).grid(row=row, column=0, padx=14, pady=6, sticky="w")
@@ -1091,8 +1093,16 @@ class RecapStudioTabFrame(ctk.CTkFrame):
                 messagebox.showerror("Error Clearing Cache", str(e))
 
     def fetch_api_data(self):
-        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
-        self.api_status.configure(text="Fetching voices via AI33Pro v3...", text_color="#3B82F6")
+        key = self.api_key.get().strip() if hasattr(self, "api_key") else ""
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
+        if not key:
+            self.api_status.configure(text="⚠️ Please insert your AI33Pro API Key first!", text_color="#F59E0B")
+            if hasattr(self, "api_key"):
+                self.api_key.focus()
+            return
+
+        self.api_status.configure(text="Connecting to AI33Pro & fetching voices... ▶", text_color="#3B82F6")
 
         def worker():
             try:
@@ -1149,7 +1159,9 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         self._filter_voices()
 
     def _preview_voice_inline(self, name: str, vid: str):
-        key = self.api_key.get().strip() if hasattr(self, "api_key") else "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+        key = self.api_key.get().strip() if hasattr(self, "api_key") else ""
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
         out_p = os.path.join(os.environ.get("TEMP", "C:/tmp"), f"_preview_{vid[:12]}.mp3")
         
         def worker():
@@ -1372,7 +1384,9 @@ class RecapStudioTabFrame(ctk.CTkFrame):
         vid = voice_dict.get("voice_id") or voice_dict.get("id") or ""
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
-        key = self.api_key.get().strip() or "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+        key = self.api_key.get().strip() if hasattr(self, "api_key") else ""
+        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+            key = ""
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
