@@ -43,9 +43,15 @@ def find_binary(name: str) -> str:
     meipass_dir = Path(getattr(sys, "_MEIPASS", "")) if hasattr(sys, "_MEIPASS") else None
     exe_dir = Path(sys.executable).parent
 
+    workspace_root = base_dir.parent if (base_dir / "tabs").exists() else base_dir
+
     candidates = [
+        base_dir / f"{name}.exe",
+        base_dir / name,
         base_dir / "bin" / f"{name}.exe",
         base_dir / "bin" / name,
+        workspace_root / f"{name}.exe",
+        workspace_root / "bin" / f"{name}.exe",
         exe_dir / "bin" / f"{name}.exe",
         exe_dir / "bin" / name,
         exe_dir / f"{name}.exe",
@@ -649,12 +655,18 @@ def color_to_ffmpeg(hex_color: str, alpha: float = 1.0) -> str:
 
 
 def ffmpeg_escape_text(text: str) -> str:
-    """Escapes special characters (: ' \\ % [ ]) for FFmpeg drawtext filter string."""
+    """
+    Escapes special characters (: ' \ % [ ]) for FFmpeg drawtext filter string.
+    Replaces ASCII single quotes with typographic apostrophe (’) and double quotes
+    with (”) so FFmpeg filtergraph parser does not prematurely terminate strings or
+    mistake song titles for filter names.
+    """
     if not text:
         return ""
-    clean = text.replace("•", "-").replace("♫", "").replace("✝", "+").replace("▶", ">")
+    clean = str(text).replace("'", "’").replace('"', "”")
+    clean = clean.replace("•", "-").replace("♫", "").replace("✝", "+").replace("▶", ">")
     clean = clean.replace("[", "\\[").replace("]", "\\]")
-    clean = clean.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
+    clean = clean.replace("\\", "\\\\").replace(":", "\\:").replace("%", "%%")
     return clean
 
 
