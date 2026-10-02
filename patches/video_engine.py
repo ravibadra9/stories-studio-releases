@@ -17,6 +17,7 @@ import subprocess
 import json
 import time
 import random
+import re
 from pathlib import Path
 from typing import List, Dict, Any, Optional, Callable, Tuple
 
@@ -42,10 +43,15 @@ def find_binary(name: str) -> str:
     base_dir = Path(__file__).resolve().parent
     meipass_dir = Path(getattr(sys, "_MEIPASS", "")) if hasattr(sys, "_MEIPASS") else None
     exe_dir = Path(sys.executable).parent
+    workspace_root = base_dir.parent if (base_dir / "tabs").exists() else base_dir
 
     candidates = [
+        base_dir / f"{name}.exe",
+        base_dir / name,
         base_dir / "bin" / f"{name}.exe",
         base_dir / "bin" / name,
+        workspace_root / f"{name}.exe",
+        workspace_root / "bin" / f"{name}.exe",
         exe_dir / "bin" / f"{name}.exe",
         exe_dir / "bin" / name,
         exe_dir / f"{name}.exe",
@@ -659,12 +665,18 @@ def color_to_ffmpeg(hex_color: str, alpha: float = 1.0) -> str:
 
 
 def ffmpeg_escape_text(text: str) -> str:
-    """Escapes special characters (: ' \\ % [ ]) for FFmpeg drawtext filter string."""
+    """
+    Escapes special characters (: ' \ % [ ]) for FFmpeg drawtext filter string.
+    Replaces ASCII single quotes with typographic apostrophe (’) and double quotes
+    with (”) so FFmpeg filtergraph parser does not prematurely terminate strings or
+    mistake song titles for filter names.
+    """
     if not text:
         return ""
-    clean = text.replace("•", "-").replace("♫", "").replace("✝", "+").replace("▶", ">")
+    clean = str(text).replace("'", "’").replace('"', "”")
+    clean = clean.replace("•", "-").replace("♫", "").replace("✝", "+").replace("▶", ">")
     clean = clean.replace("[", "\\[").replace("]", "\\]")
-    clean = clean.replace("\\", "\\\\").replace("'", "\\'").replace(":", "\\:").replace("%", "%%")
+    clean = clean.replace("\\", "\\\\").replace(":", "\\:").replace("%", "%%")
     return clean
 
 
@@ -1382,6 +1394,12 @@ def render_dual_variant_video(
         quality_preset=quality_preset
     )
 
+    # Clean audio bitrate value (e.g. "192k (High Quality)" -> "192k")
+    clean_audio_bit = "192k"
+    m_bit = re.search(r'(\d+)\s*k?', str(audio_bitrate).lower())
+    if m_bit:
+        clean_audio_bit = f"{m_bit.group(1)}k"
+
     cmd.extend([
         "-filter_complex", filter_complex_str,
         "-map", f"[{last_v}]",
@@ -1389,7 +1407,7 @@ def render_dual_variant_video(
         "-r", str(fps),
         *encoder_flags,
         "-c:a", "aac",
-        "-b:a", audio_bitrate if "k" in str(audio_bitrate) else f"{audio_bitrate}k",
+        "-b:a", clean_audio_bit,
         "-shortest",
         "-pix_fmt", "yuv420p",
         "-progress", "pipe:1",
@@ -1492,7 +1510,7 @@ def render_dual_variant_video(
     else:
         err_msg = ""
         for err_candidate in reversed(tail_log):
-            if any(k in err_candidate.lower() for k in ["error", "invalid", "failed", "cannot", "unsupported", "not found"]):
+            if any(k in err_candidate.lower() for k in ["no such filter", "error", "invalid", "failed", "cannot", "unsupported", "not found"]):
                 err_msg = err_candidate
                 break
         if not err_msg and tail_log:
