@@ -3566,7 +3566,7 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         self.api_entry=ctk.CTkEntry(kf,show="*",placeholder_text="Paste AI33Pro Key (sk_...)",fg_color=C["entry_bg"],text_color=C["text"],border_color=C["border"])
         self.api_entry.pack(side="left",fill="x",expand=True,padx=5)
         saved_k = self.settings.get("api_key") or ""
-        if saved_k and saved_k != "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+        if saved_k:
             self.api_entry.insert(0, saved_k)
         self.api_key = self.api_entry
         self._key_visible = False
@@ -4348,8 +4348,6 @@ class AdvanceEditorFrame(ctk.CTkFrame):
                 if val: key = val
         except Exception:
             pass
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            key = ""
         if not key:
             if hasattr(self, "api_status"):
                 try: self.api_status.configure(text="⚠️ Please insert your AI33Pro API Key first!", text_color="#F59E0B")
@@ -4545,8 +4543,6 @@ class AdvanceEditorFrame(ctk.CTkFrame):
         vname = voice_dict.get("name") or vid
         purl = voice_dict.get("preview_url") or ""
         key = self.api_entry.get().strip() if hasattr(self, "api_entry") else ""
-        if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-            key = ""
 
         if not vid:
             messagebox.showwarning("Voice Missing", "Please select a valid Voice ID.")
