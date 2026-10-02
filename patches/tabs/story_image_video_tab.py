@@ -459,7 +459,7 @@ class StoryImageVideoTab(ctk.CTkFrame):
         # 3. Audio Visualizer (GIF / Behind Captions - Auto Background Removed)
         self.enable_visualizer = ctk.CTkCheckBox(c6, text="Audio Visualizer (Auto-BG Removed)", text_color=C_TEXT)
         self.enable_visualizer.grid(row=3, column=0, columnspan=3, padx=6, pady=(5, 2), sticky="w")
-        self.enable_visualizer.select()
+        self.enable_visualizer.deselect()
 
         self.visualizer_entry = self._file_row(c6, 4, "Visualizer GIF / File", self._choose_visualizer, "Looping soundwave GIF (Downloads/soundwave...)")
         def_vis = r"C:\Users\Administrator\Downloads\mxj_files-soundwave-23743.gif"
