@@ -10,7 +10,7 @@ Provides:
 import json, os, threading
 from typing import List, Dict, Any, Optional
 
-DEFAULT_AI33_KEY = "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt"
+DEFAULT_AI33_KEY = ""
 _APPDATA = os.path.join(os.environ.get("APPDATA", os.path.expanduser("~")), "StoriesStudio")
 _CACHE_FILE = os.path.join(_APPDATA, "voice_cache.json")
 _VOICE_LIST_CACHE_FILE = os.path.join(_APPDATA, "ai33_voices_cache.json")
@@ -23,9 +23,13 @@ def _ensure_dir():
 def _load_cache():
     try:
         with open(_CACHE_FILE, "r", encoding="utf-8") as f:
-            return json.load(f)
+            data = json.load(f)
+            # Filter out legacy hardcoded invalid key
+            if data.get("api_key") == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+                data["api_key"] = ""
+            return data
     except Exception:
-        return {"api_key": DEFAULT_AI33_KEY, "favorites": [], "recent_searches": []}
+        return {"api_key": "", "favorites": [], "recent_searches": []}
 
 
 def _save_cache(data):
@@ -39,13 +43,18 @@ def _save_cache(data):
 # ═══════════════════════════════════════════════
 def save_api_key(key: str):
     c = _load_cache()
-    c["api_key"] = key if key and key.strip() else DEFAULT_AI33_KEY
+    clean_k = key.strip() if key else ""
+    if clean_k == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+        clean_k = ""
+    c["api_key"] = clean_k
     _save_cache(c)
 
 
 def load_api_key() -> str:
-    key = _load_cache().get("api_key", "")
-    return key if key and key.strip() else DEFAULT_AI33_KEY
+    key = _load_cache().get("api_key", "").strip()
+    if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+        return ""
+    return key
 
 
 # ═══════════════════════════════════════════════
@@ -156,8 +165,10 @@ DEFAULT_FALLBACK_VOICES = [
 # ═══════════════════════════════════════════════
 def load_voices_cached(api_key: Optional[str] = None, force_refresh: bool = False, provider_filter: Optional[str] = None) -> List[Dict[str, Any]]:
     """Fetch voices via AI33Client across all supported providers with local JSON cache & resilient fallbacks."""
-    key = api_key or load_api_key()
-    
+    key = (api_key or load_api_key() or "").strip()
+    if key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+        key = ""
+
     if not force_refresh and os.path.exists(_VOICE_LIST_CACHE_FILE):
         try:
             with open(_VOICE_LIST_CACHE_FILE, "r", encoding="utf-8") as f:
@@ -173,21 +184,18 @@ def load_voices_cached(api_key: Optional[str] = None, force_refresh: bool = Fals
             pass
 
     voices = []
-    try:
-        from ai33_api import AI33Client
-        client = AI33Client(api_key=key)
-        voices = client.fetch_voices(provider_filter=provider_filter, fast_mode=True)
-        if not voices and key != DEFAULT_AI33_KEY:
-            client_def = AI33Client(api_key=DEFAULT_AI33_KEY)
-            voices = client_def.fetch_voices(provider_filter=provider_filter, fast_mode=True)
-        
-        if voices:
-            _ensure_dir()
-            with open(_VOICE_LIST_CACHE_FILE, "w", encoding="utf-8") as f:
-                json.dump(voices, f, indent=2, ensure_ascii=False)
-            return voices
-    except Exception:
-        pass
+    if key:
+        try:
+            from ai33_api import AI33Client
+            client = AI33Client(api_key=key)
+            voices = client.fetch_voices(provider_filter=provider_filter, fast_mode=True)
+            if voices:
+                _ensure_dir()
+                with open(_VOICE_LIST_CACHE_FILE, "w", encoding="utf-8") as f:
+                    json.dump(voices, f, indent=2, ensure_ascii=False)
+                return voices
+        except Exception:
+            pass
 
     # If network fetch failed, try cache file
     if os.path.exists(_VOICE_LIST_CACHE_FILE):
@@ -250,7 +258,9 @@ def search_voices_async(api_key: Optional[str], query: str, callback, provider_f
 # ═══════════════════════════════════════════════
 def validate_key(api_key: str) -> bool:
     """Quick check via /v3/voices endpoint."""
-    key = api_key or DEFAULT_AI33_KEY
+    key = (api_key or "").strip()
+    if not key or key == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
+        return False
     try:
         from ai33_api import AI33Client
         client = AI33Client(api_key=key)
