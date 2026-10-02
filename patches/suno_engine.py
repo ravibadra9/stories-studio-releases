@@ -217,11 +217,15 @@ def get_video_encoder_flags(
     gpu_mode: str = "auto",
     crf_val: str = "21",
     cpu_preset: str = "fast",
-    threads: Optional[int] = None
+    threads: Optional[int] = None,
+    target_w: int = 1920,
+    target_h: int = 1080,
+    fps: int = 30,
+    quality_preset: str = "Balanced"
 ) -> List[str]:
     """
     Resolves optimal FFmpeg encoder flags based on GPU / hardware choice.
-    Uses safe, universal parameters to prevent unsupported preset errors and driver crashes.
+    Uses safe, universal parameters with bitrate caps to prevent file size bloat.
     """
     hw_info = detect_hardware_acceleration()
     mode = (gpu_mode or "auto").lower()
@@ -239,22 +243,62 @@ def get_video_encoder_flags(
 
     safe_threads = threads or max(2, min(6, (os.cpu_count() or 4)))
 
+    # Calculate optimal resolution and framerate-aware bitrate targets
+    pixels = target_w * target_h
+    res_scale = pixels / (1920.0 * 1080.0)
+    fps_scale = 1.35 if fps > 45 else 1.0
+
+    lower = (quality_preset or "").lower()
+    if "fast" in lower or "high speed" in lower:
+        base_target, base_max, cq_val = 4.5, 7.0, "25"
+    elif "ultra" in lower or "crisp" in lower:
+        base_target, base_max, cq_val = 10.0, 14.0, "19"
+    elif "maximum" in lower or "lossless" in lower:
+        base_target, base_max, cq_val = 14.0, 18.0, "16"
+    else:  # Balanced (Recommended)
+        base_target, base_max, cq_val = 6.5, 9.5, "22"
+
+    target_mbps = max(1.5, round(base_target * res_scale * fps_scale, 1))
+    max_mbps = max(2.5, round(base_max * res_scale * fps_scale, 1))
+    buf_mbps = max(5.0, round(max_mbps * 2.0, 1))
+
     if target_enc == "h264_nvenc":
         return [
             "-c:v", "h264_nvenc",
             "-preset", "fast",
             "-rc", "vbr",
-            "-cq", str(crf_val),
-            "-b:v", "0",
-            "-maxrate", "25M",
-            "-bufsize", "50M"
+            "-cq", str(cq_val),
+            "-b:v", f"{target_mbps}M",
+            "-maxrate", f"{max_mbps}M",
+            "-bufsize", f"{buf_mbps}M"
         ]
     elif target_enc == "h264_qsv":
-        return ["-c:v", "h264_qsv", "-preset", "medium", "-global_quality", str(crf_val)]
+        return [
+            "-c:v", "h264_qsv",
+            "-preset", "medium",
+            "-b:v", f"{target_mbps}M",
+            "-maxrate", f"{max_mbps}M",
+            "-global_quality", str(cq_val)
+        ]
     elif target_enc == "h264_amf":
-        return ["-c:v", "h264_amf", "-quality", "balanced", "-rc", "vbr_latency", "-qp_i", str(crf_val), "-qp_p", str(crf_val)]
+        return [
+            "-c:v", "h264_amf",
+            "-quality", "balanced",
+            "-rc", "vbr_latency",
+            "-b:v", f"{target_mbps}M",
+            "-maxrate", f"{max_mbps}M",
+            "-qp_i", str(cq_val),
+            "-qp_p", str(cq_val)
+        ]
     else:
-        return ["-c:v", "libx264", "-preset", str(cpu_preset or "fast"), "-crf", str(crf_val), "-threads", str(safe_threads)]
+        return [
+            "-c:v", "libx264",
+            "-preset", str(cpu_preset or "fast"),
+            "-crf", str(crf_val),
+            "-maxrate", f"{max_mbps}M",
+            "-bufsize", f"{buf_mbps}M",
+            "-threads", str(safe_threads)
+        ]
 
 
 
@@ -1295,7 +1339,15 @@ def render_dual_variant_video(
     if banner_input_idx is not None and color_banner_path:
         cmd.extend(["-i", str(Path(color_banner_path).resolve()).replace("\\", "/")])
 
-    encoder_flags = get_video_encoder_flags(gpu_mode=gpu_mode, crf_val=crf_val, cpu_preset=x264_preset)
+    encoder_flags = get_video_encoder_flags(
+        gpu_mode=gpu_mode,
+        crf_val=crf_val,
+        cpu_preset=x264_preset,
+        target_w=target_w,
+        target_h=target_h,
+        fps=fps,
+        quality_preset=quality_preset
+    )
 
     cmd.extend([
         "-filter_complex", filter_complex_str,
