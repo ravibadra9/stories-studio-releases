@@ -38,7 +38,7 @@ from PIL import Image, ImageTk, ImageDraw, ImageFont
 import concurrent.futures
 from ui_theme import THEME, FONTS, CTk3DButton
 from suno_api import SunoAPI
-from config_manager import load_config, save_config, get_downloads_dir, get_config_dir
+from config_manager import load_config, save_config, get_downloads_dir, get_config_dir, get_api_key, save_api_key, validate_and_fetch_ai33_status
 from video_engine import (
     render_dual_variant_video,
     calculate_album_schedule,
@@ -521,13 +521,13 @@ def create(parent_frame, boot_data=None):
     player_style_var = ctk.StringVar(value=PLAYER_STYLES[0])
 
     VIZ_STYLES = [
+        "None",
         "Neon Spectrum Bars",
         "Glowing Waveform Line",
         "Mirrored Dual Spectrum",
         "Circular / Radial Spectrum",
         "Musical Spectrum (ShowCQT)",
-        "LED Studio Peak Meter",
-        "None"
+        "LED Studio Peak Meter"
     ]
     viz_style_var = ctk.StringVar(value=VIZ_STYLES[0])
     viz_color_var = ctk.StringVar(value="#EAB308")
@@ -566,7 +566,7 @@ def create(parent_frame, boot_data=None):
             "font_italic": False,
             "text_shadow": True,
             "player_style": PLAYER_STYLES[0] if is_v1 else PLAYER_STYLES[1],
-            "viz_style": "Neon Spectrum Bars" if is_v1 else "Glowing Waveform Line",
+            "viz_style": "None",
             "viz_color": "#BEF264" if is_v1 else "#38BDF8",
             "show_banner": True,
             "banner_top": "🌈🙏 Thank you for worshipping with us! 🙏🌈" if is_v1 else "🎧🔥 Stream the Full Album in High Fidelity! 🔥🎧",
@@ -641,6 +641,137 @@ def create(parent_frame, boot_data=None):
         font=FONTS["btn_small"],
         command=_collapse_all_cards
     ).pack(side="right", padx=4, pady=8)
+
+    # ── AI33PRO API KEY INSERT & FETCH BAR ──
+    key_bar = ctk.CTkFrame(left_scroll, fg_color="#10141f", corner_radius=10, border_width=1, border_color="#222c40")
+    key_bar.pack(fill="x", padx=12, pady=(4, 6))
+
+    key_bar_top = ctk.CTkFrame(key_bar, fg_color="transparent")
+    key_bar_top.pack(fill="x", padx=10, pady=(6, 2))
+
+    ctk.CTkLabel(
+        key_bar_top,
+        text="🔑  AI33Pro API Key (Suno Engine)",
+        font=FONTS["small_bold"],
+        text_color="#38bdf8"
+    ).pack(side="left")
+
+    key_bar_status = ctk.CTkLabel(
+        key_bar_top,
+        text="● Ready",
+        font=FONTS["small"],
+        text_color=THEME["text_muted"]
+    )
+    key_bar_status.pack(side="right")
+
+    key_bar_inp = ctk.CTkFrame(key_bar, fg_color="transparent")
+    key_bar_inp.pack(fill="x", padx=10, pady=(0, 6))
+
+    key_entry_bulk = ctk.CTkEntry(
+        key_bar_inp,
+        show="*",
+        placeholder_text="Paste AI33Pro Key (sk_... or xi-api-key)",
+        height=28,
+        font=FONTS["code"],
+        fg_color=THEME["input_bg"],
+        border_color=THEME["input_border"],
+        text_color=THEME["accent"]
+    )
+    key_entry_bulk.pack(side="left", fill="x", expand=True, padx=(0, 4))
+    cur_k_bulk = get_api_key()
+    if cur_k_bulk:
+        key_entry_bulk.insert(0, cur_k_bulk)
+
+    kb_masked = [True]
+    def _toggle_kb_mask():
+        kb_masked[0] = not kb_masked[0]
+        key_entry_bulk.configure(show="" if not kb_masked[0] else "*")
+        btn_kb_eye.configure(text="🙈" if not kb_masked[0] else "👁")
+
+    btn_kb_eye = ctk.CTkButton(
+        key_bar_inp,
+        text="👁",
+        width=28,
+        height=28,
+        fg_color=THEME["secondary_btn"],
+        hover_color=THEME["secondary_btn_hover"],
+        text_color=THEME["text"],
+        font=FONTS["small_bold"],
+        corner_radius=6,
+        command=_toggle_kb_mask
+    )
+    btn_kb_eye.pack(side="left", padx=(0, 4))
+
+    def _save_bulk_key():
+        k = key_entry_bulk.get().strip()
+        if save_api_key(k):
+            key_bar_status.configure(text="✓ Key Saved", text_color=THEME["success"])
+            container.after(1500, lambda: key_bar_status.configure(text="● Ready", text_color=THEME["text_muted"]))
+        else:
+            key_bar_status.configure(text="❌ Save Error", text_color=THEME["danger"])
+
+    btn_kb_save = ctk.CTkButton(
+        key_bar_inp,
+        text="💾 Save",
+        width=58,
+        height=28,
+        fg_color=THEME["secondary_btn"],
+        hover_color=THEME["secondary_btn_hover"],
+        text_color=THEME["text"],
+        font=FONTS["small_bold"],
+        corner_radius=6,
+        command=_save_bulk_key
+    )
+    btn_kb_save.pack(side="left", padx=(0, 4))
+
+    def _fetch_bulk_key():
+        k = key_entry_bulk.get().strip()
+        if not k:
+            k = get_api_key()
+            if k:
+                key_entry_bulk.delete(0, "end")
+                key_entry_bulk.insert(0, k)
+
+        if not k:
+            key_bar_status.configure(text="⚠️ Please insert key first", text_color="#f59e0b")
+            return
+
+        key_bar_status.configure(text="⚡ Verifying...", text_color="#38bdf8")
+        btn_kb_fetch.configure(state="disabled", text="⏳...")
+
+        def _worker():
+            ok, msg, credits_val = validate_and_fetch_ai33_status(k)
+            if ok:
+                save_api_key(k)
+            def _ui():
+                btn_kb_fetch.configure(state="normal", text="⚡ Fetch")
+                if ok:
+                    disp = "✅ Connected ✓"
+                    if credits_val:
+                        disp += f" ({credits_val} creds)"
+                    key_bar_status.configure(text=disp, text_color=THEME["success"])
+                else:
+                    key_bar_status.configure(text=msg, text_color=THEME["danger"])
+            container.after(0, _ui)
+
+        threading.Thread(target=_worker, daemon=True).start()
+
+    btn_kb_fetch = ctk.CTkButton(
+        key_bar_inp,
+        text="⚡ Fetch",
+        width=64,
+        height=28,
+        fg_color="#0284c7",
+        hover_color="#0369a1",
+        text_color="#ffffff",
+        font=FONTS["small_bold"],
+        corner_radius=6,
+        command=_fetch_bulk_key
+    )
+    btn_kb_fetch.pack(side="left")
+
+    if cur_k_bulk:
+        container.after(1000, _fetch_bulk_key)
 
     # ════════════════════════════════════════════════════════════════
     # CHANNEL PROFILE SWITCHER & PRESET MANAGEMENT BAR
@@ -862,7 +993,7 @@ def create(parent_frame, boot_data=None):
     suno_box.grid(row=1, column=0, sticky="ew")
     suno_box.grid_columnconfigure(0, weight=1)
 
-    ctk.CTkLabel(suno_box, text="Global Music Style Prompt:", font=FONTS["small_bold"], text_color=THEME["text"]).grid(row=0, column=0, sticky="w", padx=6, pady=2)
+    ctk.CTkLabel(suno_box, text="🌐 Universal Music Style Prompt:", font=FONTS["small_bold"], text_color=THEME["text"]).grid(row=0, column=0, sticky="w", padx=6, pady=2)
     style_entry = ctk.CTkEntry(
         suno_box,
         height=34,
@@ -1147,7 +1278,7 @@ It speaks before I step inside!"""
             style_entry_song = ctk.CTkEntry(
                 style_row,
                 textvariable=song_style_var,
-                placeholder_text="Uses Global Style... (Click '📋 Paste Style' to override)",
+                placeholder_text="Uses Universal Style... (Click '📋 Paste Style' to override)",
                 height=26,
                 fg_color="#161d2d",
                 border_width=1,
@@ -1175,7 +1306,7 @@ It speaks before I step inside!"""
             # Badge Label
             badge_lbl = ctk.CTkLabel(
                 style_row,
-                text="🎯 Custom Active" if init_val.strip() else "🌐 Global Style",
+                text="🎯 Custom Active" if init_val.strip() else "🌐 Universal Style",
                 font=FONTS["small_bold"],
                 text_color="#c084fc" if init_val.strip() else "#64748b",
                 fg_color="#2d1b4e" if init_val.strip() else "#1a2234",
@@ -1233,7 +1364,7 @@ It speaks before I step inside!"""
                     se.configure(border_color="#a855f7")
                     br.configure(fg_color="#334155", text_color="#cbd5e1")
                 else:
-                    bl.configure(text="🌐 Global Style", text_color="#64748b", fg_color="#1a2234")
+                    bl.configure(text="🌐 Universal Style", text_color="#64748b", fg_color="#1a2234")
                     se.configure(border_color="#2b3954")
                     br.configure(fg_color="#1e293b", text_color="#64748b")
 
@@ -2986,7 +3117,9 @@ It speaks before I step inside!"""
                 return
 
         cfg = load_config()
-        key = cfg.get("api_key", "")
+        key = key_entry_bulk.get().strip() or get_api_key() or cfg.get("api_key", "")
+        if key:
+            save_api_key(key)
 
         out_folder = Path(out_dir_var.get())
         out_folder.mkdir(parents=True, exist_ok=True)
@@ -3048,7 +3181,7 @@ It speaks before I step inside!"""
                 eff_disp = f"🎯 Custom Style: {custom_s[:48]}..." if len(custom_s) > 48 else f"🎯 Custom Style: {custom_s}"
                 ctk.CTkLabel(info_box, text=eff_disp, font=FONTS["small_bold"], text_color="#c084fc", anchor="w").pack(fill="x")
             else:
-                eff_disp = f"🌐 Global Style: {style_prompt[:48]}..." if len(style_prompt) > 48 else f"🌐 Global Style: {style_prompt}"
+                eff_disp = f"🌐 Universal Style: {style_prompt[:48]}..." if len(style_prompt) > 48 else f"🌐 Universal Style: {style_prompt}"
                 ctk.CTkLabel(info_box, text=eff_disp, font=FONTS["small_bold"], text_color="#94a3b8", anchor="w").pack(fill="x")
 
             p_bar = ctk.CTkProgressBar(info_box, progress_color=THEME["accent"], fg_color="#121622", height=8)
@@ -3079,7 +3212,7 @@ It speaks before I step inside!"""
                 _log_console(f"Output Save Location: {out_folder}")
                 _log_console(f"Songs Count: {len(cards_data)} song(s). Style: '{style_prompt}'")
                 _log_console(f"Typography: Family='{font_family_var.get()}', Size={font_size_var.get()}px, Bold={font_bold_var.get()}, Italic={font_italic_var.get()}")
-                _log_console(f"Player Layout: '{player_style_var.get()}' | Visualizer: '{viz_style_var.get()}'")
+                _log_console(f"Player Layout: '{player_style_var.get()}' | Visualizer: Disabled (None)")
                 time.sleep(1)
 
                 if is_premade:
@@ -3096,7 +3229,7 @@ It speaks before I step inside!"""
                         _add_card_buttons(card, item["title"], v1_f, v2_f)
 
                     v1_tracks = [item["v1_file"] for item in cards_data if item.get("v1_file")]
-                    v2_tracks = [item["v2_file"] for item in cards_data if item.get("v2_file")]
+                    v2_tracks = [(item.get("v2_file") or item.get("v1_file")) for item in cards_data if (item.get("v2_file") or item.get("v1_file"))]
 
                     if not v1_tracks:
                         _log_console("❌ Error: No premade MP3 tracks available. Aborting video render.")
@@ -3142,7 +3275,7 @@ It speaks before I step inside!"""
 
                         custom_s = (item.get("custom_style") or "").strip()
                         effective_style = custom_s if custom_s else style_prompt
-                        style_source = "🎯 CUSTOM" if custom_s else "🌐 GLOBAL"
+                        style_source = "🎯 CUSTOM" if custom_s else "🌐 UNIVERSAL"
 
                         _log_console(f"Requesting Suno API for '{s_title}' [{style_source} Style: '{effective_style}']...")
                         container.after(0, lambda sl=st_lbl, pb=p_bar, ss=style_source: (sl.configure(text=f"⚡ Requesting ({ss})..."), pb.set(0.1)))
@@ -3237,7 +3370,7 @@ It speaks before I step inside!"""
 
 
                 v1_tracks = [item["v1_file"] for item in cards_data if item.get("v1_file")]
-                v2_tracks = [item["v2_file"] for item in cards_data if item.get("v2_file")]
+                v2_tracks = [(item.get("v2_file") or item.get("v1_file")) for item in cards_data if (item.get("v2_file") or item.get("v1_file"))]
 
                 if not v1_tracks:
                     _log_console("❌ Error: No MP3 audio tracks were downloaded. Aborting video render.")
@@ -3313,7 +3446,7 @@ It speaks before I step inside!"""
                         logo_path=p1.get("logo_path") or None,
                         logo_scale=(p1.get("logo_scale", 100) / 100.0),
                         bg_effect=p1.get("bg_effect", "Cinematic Slow Zoom (Ken Burns)"),
-                        visualizer_style=p1.get("visualizer_style") or p1.get("viz_style") or viz_style_var.get() or "None",
+                        visualizer_style="None" if str(p1.get("visualizer_style") or p1.get("viz_style") or viz_style_var.get() or "None").strip().lower() in ("none", "neon spectrum bars", "glowing waveform line", "") else (p1.get("visualizer_style") or p1.get("viz_style") or "None"),
                         visualizer_color=p1.get("viz_color", "#BEF264"),
                         player_style=p1.get("player_style") or player_style_var.get() or "🌟 Circular Spinning Disc (Rotating Logo Vinyl)",
                         font_family=p1.get("font_family", "Segoe UI"),
@@ -3365,7 +3498,7 @@ It speaks before I step inside!"""
                         logo_path=p2.get("logo_path") or None,
                         logo_scale=(p2.get("logo_scale", 100) / 100.0),
                         bg_effect=p2.get("bg_effect", "Cinematic Slow Zoom (Ken Burns)"),
-                        visualizer_style=p2.get("visualizer_style") or p2.get("viz_style") or viz_style_var.get() or "None",
+                        visualizer_style="None" if str(p2.get("visualizer_style") or p2.get("viz_style") or viz_style_var.get() or "None").strip().lower() in ("none", "neon spectrum bars", "glowing waveform line", "") else (p2.get("visualizer_style") or p2.get("viz_style") or "None"),
                         visualizer_color=p2.get("viz_color", "#38BDF8"),
                         player_style=p2.get("player_style") or player_style_var.get() or "Style 5: Cyberpunk Neon HUD Deck",
 
