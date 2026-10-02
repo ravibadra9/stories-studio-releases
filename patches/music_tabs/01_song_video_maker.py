@@ -4080,7 +4080,7 @@ class YTAudioSplitter(ctk.CTkFrame):
                     last_err = err_out[-400:]
                     if "database is locked" in err_out or "Could not copy Chrome cookie" in err_out:
                         self.after(0, lambda: self._log(
-                            "⚠  Browser cookie database is currently locked. "
+                            "⚠  Browser cookie database is currently locked.\n"
                             "👉 Falling back automatically to direct stream...",
                             ORANGE
                         ))
