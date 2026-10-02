@@ -87,10 +87,18 @@ def create(parent_frame, boot_data=None):
     boot_data = boot_data or {}
     config = load_config()
 
+    try:
+        scr_w = parent_frame.winfo_screenwidth()
+        scr_h = parent_frame.winfo_screenheight()
+    except Exception:
+        scr_w, scr_h = 1920, 1080
+    is_small_screen = (scr_w <= 1366 or scr_h <= 768)
+
     container = ctk.CTkFrame(parent_frame, fg_color=THEME["bg"], corner_radius=0)
     container.pack(fill="both", expand=True)
-    container.grid_columnconfigure(0, weight=5, minsize=460)  # Left panel
-    container.grid_columnconfigure(1, weight=5, minsize=460)  # Right panel
+    c_min = 360 if is_small_screen else 460
+    container.grid_columnconfigure(0, weight=5, minsize=c_min)  # Left panel
+    container.grid_columnconfigure(1, weight=5, minsize=c_min)  # Right panel
     container.grid_rowconfigure(0, weight=1)
 
     # State dictionaries & flags
