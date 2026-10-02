@@ -808,8 +808,6 @@ def _generate_single_chunk_tts(text: str, voice_id: str, tts_model_id: str, elev
 
     last_error = ""
     api_key_to_use = (elevenlabs_key or os.getenv("AI33_API_KEY") or "").strip()
-    if api_key_to_use == "sk_c8cdjxkts9xdinztd37ygd6m2fzfxzq2aoc7qn3xjmtpwqmt":
-        api_key_to_use = ""
 
     # Tier 1: AI33 Client v3 Endpoint
     try:
