@@ -377,11 +377,11 @@ GPU_MODES = [
 ]
 
 VISUALIZER_STYLES = [
+    "None (Background Only)",
     "Neon Spectrum Bars",
     "Glowing Waveform Line",
     "Circular Spinning Vinyl",
-    "Dual Mirrored Waves",
-    "None (Background Only)"
+    "Dual Mirrored Waves"
 ]
 
 PLAYER_STYLES = [
@@ -710,7 +710,7 @@ def create(parent_frame, boot_data=None):
     style_frame.pack(fill="x", padx=4, pady=(2, 6))
     style_frame.grid_columnconfigure(1, weight=1)
 
-    ctk.CTkLabel(style_frame, text="🌐 Global Style / Genre Prompt:", font=FONTS["small_bold"], text_color="#38bdf8").grid(row=0, column=0, padx=8, pady=6, sticky="w")
+    ctk.CTkLabel(style_frame, text="🌐 Universal Music Style / Genre Prompt:", font=FONTS["small_bold"], text_color="#38bdf8").grid(row=0, column=0, padx=8, pady=6, sticky="w")
     style_entry = ctk.CTkEntry(
         style_frame,
         placeholder_text="e.g. ambient christian lo-fi, peaceful worship, 432hz acoustic guitar, soft soothing male vocal",
@@ -916,7 +916,7 @@ def create(parent_frame, boot_data=None):
             style_entry_song = ctk.CTkEntry(
                 style_row,
                 textvariable=song_style_var,
-                placeholder_text="Uses Global Style... (Click '📋 Paste Style' to override)",
+                placeholder_text="Uses Universal Style... (Click '📋 Paste Style' to override)",
                 height=24,
                 fg_color="#161d2d",
                 border_color="#a855f7" if init_style else "#2b3954",
