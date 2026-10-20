@@ -25,6 +25,64 @@ import tkinter as tk
 from tkinter import Canvas, filedialog, messagebox
 from PIL import Image, ImageTk
 
+# Safe import of captions_generator_engine with self-contained fallback definitions
+try:
+    import captions_generator_engine as ce
+except Exception:
+    ce = None
+
+RANDOM_PER_SCENE_KEY = getattr(ce, "RANDOM_PER_SCENE_KEY", "🎲 Random Per Scene (Different Style Every Scene)")
+RANDOM_PER_CHUNK_KEY = getattr(ce, "RANDOM_PER_CHUNK_KEY", "🎲 Random Per Line (Different Style Every Phrase)")
+RANDOM_FONT_KEY = getattr(ce, "RANDOM_FONT_KEY", "🎲 Random Font (Different Font Per Scene)")
+AUTO_FONT_KEY = getattr(ce, "AUTO_FONT_KEY", "✨ Auto (Preset Curated Font)")
+PRESET_CHOICES = getattr(ce, "PRESET_CHOICES", [
+    RANDOM_PER_SCENE_KEY, RANDOM_PER_CHUNK_KEY, "CapCut Bold Yellow"
+])
+FONT_CHOICES = getattr(ce, "FONT_CHOICES", [AUTO_FONT_KEY, "Impact", "Montserrat", "Arial", "Anton", "Poppins"])
+CAPCUT_PRESETS = getattr(ce, "CAPCUT_PRESETS", {
+    "CapCut Bold Yellow": {
+        "name": "CapCut Bold Yellow",
+        "font": "Impact",
+        "primary": "#FFFFFF",
+        "highlight": "#FFE600",
+        "outline": "#000000",
+        "outline_w": 10,
+        "shadow": 2,
+        "box": False,
+        "category": "Viral",
+        "description": "Viral TikTok/CapCut standard: Electric yellow pop with 10px thick dark stroke."
+    }
+})
+
+def clean_font_name(f):
+    if hasattr(ce, "clean_font_name"):
+        return ce.clean_font_name(f)
+    return str(f).split()[0] if f else "Impact"
+
+def _get_safe_output_dir() -> str:
+    """Returns a writable directory for output videos, guaranteed not to crash in Program Files."""
+    try:
+        p = os.path.join(os.getcwd(), "videos_output")
+        os.makedirs(p, exist_ok=True)
+        test_file = os.path.join(p, ".perm_test")
+        with open(test_file, "w") as f: f.write("ok")
+        os.remove(test_file)
+        return p
+    except Exception:
+        pass
+    try:
+        p = os.path.join(os.path.expanduser("~"), "Videos", "StoriesStudio")
+        os.makedirs(p, exist_ok=True)
+        return p
+    except Exception:
+        pass
+    p = os.path.join(os.environ.get("LOCALAPPDATA", os.path.expanduser("~")), "StoriesStudio", "output")
+    try:
+        os.makedirs(p, exist_ok=True)
+    except Exception:
+        pass
+    return p
+
 # Plugin Metadata for AI Editor / stories_app.py
 TAB_TITLE = "💬  Captions Generator"
 TAB_ORDER = 28
@@ -84,8 +142,29 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
         self.active_drag_item = None
         self.bg_photo_ref = None
 
-        # Build UI layout
-        self._build_ui()
+        # Build UI layout with fault protection
+        try:
+            self._build_ui()
+        except Exception as ex:
+            import traceback
+            traceback.print_exc()
+            self._build_fallback_ui(str(ex))
+
+    def _build_fallback_ui(self, err_msg: str):
+        for w in self.winfo_children():
+            try: w.destroy()
+            except Exception: pass
+        card = ctk.CTkFrame(self, fg_color="#181124", corner_radius=12, border_width=1, border_color="#e11d48")
+        card.place(relx=0.5, rely=0.5, anchor="center")
+        ctk.CTkLabel(card, text="⚠️ Captions Generator Notice", font=("Segoe UI", 14, "bold"), text_color="#fb7185").pack(padx=24, pady=(16, 6))
+        ctk.CTkLabel(card, text=f"{err_msg}\n\nClick below to initialize.", font=("Consolas", 10), text_color="#cbd5e1", wraplength=480).pack(padx=24, pady=6)
+        def _retry():
+            try:
+                card.destroy()
+                self._build_ui()
+            except Exception as e2:
+                self._build_fallback_ui(str(e2))
+        ctk.CTkButton(card, text="🔄 Retry", width=100, height=30, fg_color="#3b82f6", command=_retry).pack(pady=(6, 16))
 
     def _build_ui(self):
         self.grid_columnconfigure(0, weight=1)
@@ -471,10 +550,6 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
 
         ctk.CTkLabel(p_row, text="Preset Style:", font=ctk.CTkFont(size=11, weight="bold"), text_color=C["accent_amber"]).pack(side="left", padx=(0, 6))
 
-        from captions_generator_engine import (
-            PRESET_CHOICES, RANDOM_PER_SCENE_KEY, RANDOM_PER_CHUNK_KEY,
-            FONT_CHOICES, AUTO_FONT_KEY, RANDOM_FONT_KEY
-        )
         self.preset_var = ctk.StringVar(value="CapCut Bold Yellow")
         self.preset_menu = ctk.CTkOptionMenu(
             p_row,
@@ -641,8 +716,7 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
         out_row = ctk.CTkFrame(export_card, fg_color="transparent")
         out_row.pack(fill="x", padx=14, pady=3)
 
-        default_out_dir = os.path.join(os.getcwd(), "videos_output")
-        os.makedirs(default_out_dir, exist_ok=True)
+        default_out_dir = _get_safe_output_dir()
 
         self.entry_out_dir = ctk.CTkEntry(
             out_row,
@@ -795,23 +869,31 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
     # INTERACTIVE CANVAS LOGIC (DRAG & DROP + REAL-TIME POSITION LOCK)
     # ══════════════════════════════════════════════════════════════════════════
     def _redraw_canvas(self):
-        """Redraws background, rule-of-thirds grid, Logo box, and CapCut caption text."""
+        """Redraws background, rule-of-thirds grid, Logo box, and CapCut caption text safely."""
+        try:
+            self._do_redraw_canvas()
+        except Exception as ex:
+            print(f"[CANVAS ERROR] {ex}")
+
+    def _do_redraw_canvas(self):
         self.cv.delete("all")
 
         # 1. Background image (from Clip 1 if available)
         first_clip = self.clip_paths[0] if self.clip_paths else None
         if first_clip and os.path.isfile(first_clip):
             try:
-                import captions_generator_engine as ce
                 temp_p = os.path.join(os.environ.get("TEMP", "temp"), "canvas_bg_thumb.jpg")
+                ff_bin = getattr(ce, "FFMPEG_PATH", "ffmpeg") if ce else "ffmpeg"
+                s_info = getattr(ce, "STARTUPINFO", None) if ce else None
+                c_flags = getattr(ce, "CREATIONFLAGS", 0) if ce else 0
                 subprocess.run([
-                    ce.FFMPEG_PATH, "-y",
+                    ff_bin, "-y",
                     "-ss", "00:00:01",
                     "-i", first_clip,
                     "-vframes", "1",
                     "-s", f"{self.cv_w}x{self.cv_h}",
                     temp_p
-                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=ce.STARTUPINFO, creationflags=ce.CREATIONFLAGS)
+                ], stdout=subprocess.PIPE, stderr=subprocess.PIPE, startupinfo=s_info, creationflags=c_flags)
                 if os.path.isfile(temp_p):
                     pil_img = Image.open(temp_p).resize((self.cv_w, self.cv_h))
                     self.bg_photo_ref = ImageTk.PhotoImage(pil_img)
@@ -854,12 +936,8 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
         cx = self.custom_caption_pos[0] * self.cv_w
         cy = self.custom_caption_pos[1] * self.cv_h
 
-        from captions_generator_engine import (
-            CAPCUT_PRESETS, RANDOM_PER_SCENE_KEY, RANDOM_PER_CHUNK_KEY,
-            RANDOM_FONT_KEY, AUTO_FONT_KEY, clean_font_name
-        )
         choice = self.preset_var.get()
-        p_info = CAPCUT_PRESETS.get(choice, CAPCUT_PRESETS["CapCut Bold Yellow"])
+        p_info = CAPCUT_PRESETS.get(choice, CAPCUT_PRESETS.get("CapCut Bold Yellow", {}))
         hl_color = p_info.get("highlight", "#FFE600")
         is_box = p_info.get("box", False)
         box_c = p_info.get("box_color", "#000000")
@@ -892,7 +970,7 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
         fill_box = "#000000"
         if is_box:
             fill_box = box_c
-            if box_c.upper() in ("#FFDE00", "#FFE600", "#FFFFFF"):
+            if str(box_c).upper() in ("#FFDE00", "#FFE600", "#FFFFFF"):
                 text_color = "#000000"
             else:
                 text_color = hl_color
@@ -906,7 +984,7 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
         )
         bb = self.cv.bbox(cap_t)
         if bb:
-            cap_border = "#10b981" if self.caption_locked else ("#000000" if is_box and fill_box.upper() in ("#FFDE00", "#FFFFFF") else hl_color)
+            cap_border = "#10b981" if self.caption_locked else ("#000000" if is_box and str(fill_box).upper() in ("#FFDE00", "#FFFFFF") else hl_color)
             cap_rect = self.cv.create_rectangle(
                 bb[0] - 8, bb[1] - 4, bb[2] + 8, bb[3] + 4,
                 fill=fill_box, outline=cap_border, width=2,
@@ -1003,7 +1081,6 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
         self._redraw_canvas()
 
     def _on_preset_change(self, choice: str):
-        from captions_generator_engine import CAPCUT_PRESETS, RANDOM_PER_SCENE_KEY, RANDOM_PER_CHUNK_KEY, AUTO_FONT_KEY
         if choice == RANDOM_PER_SCENE_KEY:
             self.lbl_preset_desc.configure(
                 text="🎲 Intelligent Mode: Har scene / clip pe alag CapCut viral style switch hoga!",
@@ -1470,10 +1547,11 @@ class CaptionsGeneratorTab(ctk.CTkFrame):
                 self.after(0, _show_done_ui)
 
             except Exception as e:
-                self._log(f"❌ Export Failed: {e}")
+                err_msg = str(e)
+                self._log(f"❌ Export Failed: {err_msg}")
                 self._set_status("Export Failed", 0.0)
-                def _err():
-                    messagebox.showerror("Export Failed", f"Video export failed:\n\n{str(e)}")
+                def _err(msg=err_msg):
+                    messagebox.showerror("Export Failed", f"Video export failed:\n\n{msg}")
                 self.after(0, _err)
             finally:
                 self.is_rendering = False
