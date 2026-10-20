@@ -427,7 +427,11 @@ TAB_CUSTOM_COLORS = {
 
     # 12. Rhymes & Live Stream
     "RHYMES": {"bg": "#be123c", "hover": "#9f1239", "text": "#ffffff", "border": "#fb7185", "active_bg": "#e11d48"},
-    "LIVE STREAM": {"bg": "#991b1b", "hover": "#7f1d1d", "text": "#ffffff", "border": "#fca5a5", "active_bg": "#b91c1c"}
+    "LIVE STREAM": {"bg": "#991b1b", "hover": "#7f1d1d", "text": "#ffffff", "border": "#fca5a5", "active_bg": "#b91c1c"},
+
+    # 13. Captions Generator (Electric Cyan / Deep Ocean)
+    "CAPTIONS": {"bg": "#0e7490", "hover": "#155e75", "text": "#ffffff", "border": "#22d3ee", "active_bg": "#0891b2"},
+    "CAPTIONS GENERATOR": {"bg": "#0e7490", "hover": "#155e75", "text": "#ffffff", "border": "#22d3ee", "active_bg": "#0891b2"}
 }
 
 TAB_COLOR_PALETTES = list(TAB_CUSTOM_COLORS.values())
@@ -518,7 +522,7 @@ class StudioScrollableTabview(ctk.CTkFrame):
             except Exception: pass
 
         sections = {
-            "AI VIDEO STUDIOS": ["STORIES", "RECAP", "SUNO", "IMAGE TO VIDEO", "SHORTS"],
+            "AI VIDEO STUDIOS": ["STORIES", "RECAP", "SUNO", "IMAGE TO VIDEO", "SHORTS", "CAPTIONS"],
             "AUDIO & CREATIVE ENGINES": ["MUSIC", "RHYMES", "PRAYER", "SONG VIDEO"],
             "UTILITIES & CLOUD": ["QUEUE", "PROMPT", "CHARACTER", "FETCH", "SUFFIX", "LIVE STREAM"],
         }
