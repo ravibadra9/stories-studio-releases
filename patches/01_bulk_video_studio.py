@@ -3319,25 +3319,36 @@ It speaks before I step inside!"""
                     # STEP 3/6: POLL TASKS & DOWNLOAD TRACKS (20% -> 60%)
                     if active_tasks:
                         _update_step(3, 35, f"Step 3/6: Polling {len(active_tasks)} Suno AI tasks & downloading tracks...", 0.25)
+                        _log_console(f"⚡ Monitoring {len(active_tasks)} Suno AI tasks in parallel (multi-track round-robin with auto-retry)...")
 
-                        for item in active_tasks:
-                            task_id = item["task_id"]
-                            title = item["title"]
-                            st_lbl = item["st_lbl"]
-                            p_bar = item["p_bar"]
-                            card = item["card"]
+                        pending_items = list(active_tasks)
+                        consecutive_errors = {item["task_id"]: 0 for item in active_tasks}
+                        max_poll_time = 3600  # 60 minutes max for large Suno custom lyric batches
+                        poll_start = time.time()
+                        poll_cycle = 0
 
-                            _log_console(f"Polling status for task #{task_id[:8]} ({title})...")
+                        while pending_items and (time.time() - poll_start) < max_poll_time:
+                            poll_cycle += 1
 
-                            for attempt in range(120):
-                                time.sleep(4)
+                            for item in list(pending_items):
+                                task_id = item["task_id"]
+                                title = item["title"]
+                                st_lbl = item["st_lbl"]
+                                p_bar = item["p_bar"]
+                                card = item["card"]
+
                                 st, prg, meta, err_msg = api_client.get_task_status(task_id)
 
                                 if st == "processing":
-                                    val = max(0.1, min(0.95, prg / 100.0 if prg else (attempt * 0.04)))
+                                    consecutive_errors[task_id] = 0
+                                    elapsed_m = int((time.time() - poll_start) / 60)
+                                    val = max(0.1, min(0.95, prg / 100.0 if prg else min(0.9, poll_cycle * 0.02)))
                                     container.after(0, lambda pb=p_bar, v=val: pb.set(v))
+                                    container.after(0, lambda sl=st_lbl, em=elapsed_m, p=prg: sl.configure(text=f"🔄 Suno AI ({p}% | {em}m)", text_color="#38bdf8"))
+
                                 elif st == "done":
-                                    p_bar.set(1.0)
+                                    consecutive_errors[task_id] = 0
+                                    container.after(0, lambda pb=p_bar: pb.set(1.0))
                                     all_audio = meta.get("all_audio_urls", [])
                                     primary_url = meta.get("audio_url", all_audio[0] if all_audio else "")
                                     second_url = all_audio[1] if len(all_audio) > 1 else primary_url
@@ -3349,7 +3360,7 @@ It speaks before I step inside!"""
                                     file2 = cache_dir / f"{clean_t}_Track2.mp3"
 
                                     SunoAPI.download_file(primary_url, str(file1))
-                                    if second_url:
+                                    if second_url and second_url != primary_url:
                                         SunoAPI.download_file(second_url, str(file2))
                                     else:
                                         file2 = file1
@@ -3358,11 +3369,10 @@ It speaks before I step inside!"""
                                     try:
                                         perm1 = permanent_cache_dir / f"{clean_t}_Track1.mp3"
                                         perm2 = permanent_cache_dir / f"{clean_t}_Track2.mp3"
-                                        if not perm1.exists() and file1.exists():
-                                            import shutil
+                                        import shutil
+                                        if file1.exists() and not perm1.exists():
                                             shutil.copy2(str(file1), str(perm1))
-                                        if not perm2.exists() and file2.exists():
-                                            import shutil
+                                        if file2.exists() and not perm2.exists():
                                             shutil.copy2(str(file2), str(perm2))
                                     except Exception:
                                         pass
@@ -3372,11 +3382,23 @@ It speaks before I step inside!"""
 
                                     container.after(0, lambda sl=st_lbl: sl.configure(text="✅ Audio Ready", text_color=THEME["success"]))
                                     _add_card_buttons(card, title, str(file1), str(file2))
-                                    break
+                                    pending_items.remove(item)
+
                                 elif st == "error":
-                                    _log_console(f"❌ Task error for '{title}': {err_msg}")
-                                    container.after(0, lambda sl=st_lbl, pb=p_bar: (sl.configure(text="❌ Failed", text_color=THEME["danger"]), pb.set(0)))
-                                    break
+                                    consecutive_errors[task_id] = consecutive_errors.get(task_id, 0) + 1
+                                    if consecutive_errors[task_id] >= 6:
+                                        _log_console(f"❌ Task error for '{title}' (confirmed after multiple retries): {err_msg}")
+                                        container.after(0, lambda sl=st_lbl, pb=p_bar: (sl.configure(text="❌ Failed", text_color=THEME["danger"]), pb.set(0)))
+                                        pending_items.remove(item)
+                                    else:
+                                        _log_console(f"⚠️ Polling retry for '{title}' ({consecutive_errors[task_id]}/6): {err_msg}")
+
+                            if pending_items:
+                                time.sleep(5)
+
+                        if pending_items:
+                            for item in pending_items:
+                                _log_console(f"⏱️ Task #{item['task_id'][:8]} ('{item['title']}') timed out waiting for Suno servers.")
                     else:
                         _log_console("⚡ 100% of songs loaded instantly from Local Audio Cache! Skipping API polling & download.")
 
