@@ -100,15 +100,45 @@ class SunoAPI:
         url = f"{BASE_URL}/v1/task/{task_id}"
         try:
             res = requests.get(url, headers=self._get_headers(), timeout=15)
-            data = res.json()
+
+            # Upstream temporary server busy / rate limit / gateway timeouts
+            if res.status_code in (429, 500, 502, 503, 504):
+                return "processing", 0, {}, f"Server temporarily busy (HTTP {res.status_code}), continuing poll..."
+
+            try:
+                data = res.json()
+            except Exception:
+                data = {}
+
+            # Check for server_busy code or message
+            if isinstance(data, dict):
+                code = str(data.get("code") or "").lower()
+                msg = str(data.get("message") or "").lower()
+                if "server_busy" in code or "temporarily busy" in msg:
+                    return "processing", 0, {}, "Server busy, retrying poll..."
+
             if res.status_code == 200:
-                status = data.get("status", "processing")
-                progress = int(data.get("progress", 0))
-                metadata = data.get("metadata", {})
-                error_msg = data.get("error_message")
+                raw_st = str(data.get("status") or data.get("state") or "processing").lower().strip()
+                if raw_st in ("done", "completed", "success", "succeeded", "finished"):
+                    status = "done"
+                elif raw_st in ("error", "failed", "cancelled"):
+                    status = "error"
+                else:
+                    status = "processing"
+
+                try:
+                    progress = int(float(data.get("progress", 0) or 0))
+                except Exception:
+                    progress = 0
+
+                metadata = data.get("metadata", {}) or {}
+                error_msg = data.get("error_message") or data.get("error")
                 return status, progress, metadata, error_msg
+            elif res.status_code in (400, 401, 403, 404):
+                err = data.get("message") if isinstance(data, dict) else res.text
+                return "error", 0, {}, f"HTTP {res.status_code}: {err}"
             else:
-                return "error", 0, {}, f"HTTP {res.status_code}: {res.text}"
+                return "processing", 0, {}, f"HTTP {res.status_code}, retrying..."
         except Exception as e:
             return "processing", 0, {}, f"Network error during poll: {e}"
 
