@@ -656,13 +656,21 @@ Singing songs of hope and dream"""
         p_bar = item["p_bar"]
         act_frame = item["act_frame"]
 
-        for attempt in range(120):
-            time.sleep(4)
+        consecutive_err = 0
+        for attempt in range(720):
+            time.sleep(5)
             status, progress, meta, err_msg = api_client.get_task_status(task_id)
+
+            if status == "error":
+                consecutive_err += 1
+                if consecutive_err < 6:
+                    continue
+            else:
+                consecutive_err = 0
 
             def _update(st=status, pr=progress, mt=meta, err=err_msg):
                 if st == "processing":
-                    val = max(0.1, min(0.95, pr / 100.0 if pr else (attempt * 0.05)))
+                    val = max(0.1, min(0.95, pr / 100.0 if pr else (attempt * 0.02)))
                     p_bar.set(val)
                 elif st == "done":
                     p_bar.set(1.0)
@@ -670,7 +678,7 @@ Singing songs of hope and dream"""
                     _render_action_buttons(act_frame, title, mt)
                 elif st == "error":
                     p_bar.set(0)
-                    st_lbl.configure(text="❌ Error", text_color=THEME["danger"], fg_color="#381014")
+                    st_lbl.configure(text=f"❌ Error: {err or 'Failed'}", text_color=THEME["danger"], fg_color="#381014")
 
             container.after(0, _update)
             if status in ("done", "error"):
