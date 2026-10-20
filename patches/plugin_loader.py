@@ -784,9 +784,9 @@ def mount_tabs(tabview, plugins: list[TabPlugin], boot_data: dict = None,
                 print(f"[PLUGIN] mount FAIL: {plugin.title}")
                 traceback.print_exc()
                 lbl = ctk.CTkLabel(target_frame,
-                    text=f"⚠️ {plugin.title} load fail\n\n{traceback.format_exc()[:500]}",
+                    text=f"⚠️ {plugin.title} load fail\n\n{traceback.format_exc()[:2000]}",
                     text_color="#fb7185", font=("Consolas", 11),
-                    wraplength=600, justify="left"
+                    wraplength=800, justify="left"
                 )
                 try: lbl.pack(expand=True, fill="both", padx=20, pady=20)
                 except Exception:
