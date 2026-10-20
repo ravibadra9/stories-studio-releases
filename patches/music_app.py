@@ -411,6 +411,23 @@ def launch_app(root: Optional[ctk.CTk] = None, user_data: Optional[Dict[str, Any
     frame = ctk.CTkFrame(root, fg_color=C["bg"])
     frame.pack(fill="both", expand=True)
 
+    # Auto-launch Mureka Chrome Extension Companion Bridge if not running
+    def _bg_mureka_bridge():
+        try:
+            import socket
+            with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+                if s.connect_ex(('127.0.0.1', 59955)) == 0:
+                    return
+            ext_bridge = Path.home() / "Desktop" / "tools" / "extension" / "bridge.py"
+            if not ext_bridge.exists():
+                ext_bridge = Path(__file__).parent / "extension" / "bridge.py"
+            if ext_bridge.exists():
+                import subprocess
+                subprocess.Popen([sys.executable, str(ext_bridge)], creationflags=0x08000000 if os.name == 'nt' else 0)
+        except Exception:
+            pass
+    threading.Thread(target=_bg_mureka_bridge, daemon=True).start()
+
     boot_data = {
         "api_key": "",
         "user_data": user_data or {},
