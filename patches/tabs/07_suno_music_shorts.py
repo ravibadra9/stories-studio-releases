@@ -1672,13 +1672,15 @@ def create(parent_frame, boot_data=None):
             # Poll Active Suno Tasks
             if active_suno_tasks:
                 _update_step(3, 40, f"Step 3/6: Polling {len(active_suno_tasks)} Suno AI audio tracks...", 0.35)
-                for item in active_suno_tasks:
-                    tid = item["task_id"]
-                    t_title = item["title"]
-                    clean_t = "".join(c for c in t_title if c.isalnum() or c in (" ", "_", "-")).strip()
+                pending_shorts = list(active_suno_tasks)
+                short_errors = {item["task_id"]: 0 for item in active_suno_tasks}
+                poll_start = time.time()
+                while pending_shorts and (time.time() - poll_start) < 3600:
+                    for item in list(pending_shorts):
+                        tid = item["task_id"]
+                        t_title = item["title"]
+                        clean_t = "".join(c for c in t_title if c.isalnum() or c in (" ", "_", "-")).strip()
 
-                    for attempt in range(120):
-                        time.sleep(4)
                         st, prg, meta, err_msg = api_client.get_task_status(tid)
                         if st == "done":
                             all_a = meta.get("all_audio_urls", [])
@@ -1688,10 +1690,14 @@ def create(parent_frame, boot_data=None):
                                 SunoAPI.download_file(aud_url, str(out_mp3))
                                 item["audio_file"] = str(out_mp3)
                                 _log_console(f"✅ Audio downloaded for Short '{t_title}': {out_mp3.name}")
-                            break
+                            pending_shorts.remove(item)
                         elif st == "error":
-                            _log_console(f"❌ Suno generation error for '{t_title}': {err_msg}")
-                            break
+                            short_errors[tid] = short_errors.get(tid, 0) + 1
+                            if short_errors[tid] >= 6:
+                                _log_console(f"❌ Suno generation error for '{t_title}': {err_msg}")
+                                pending_shorts.remove(item)
+                    if pending_shorts:
+                        time.sleep(5)
 
         # 3. VERIFY ALL AUDIO FILES
         valid_items = [item for item in songs_data if item.get("audio_file") and os.path.exists(item["audio_file"])]
